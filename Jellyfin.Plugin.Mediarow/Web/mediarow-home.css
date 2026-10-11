@@ -1,0 +1,245 @@
+/* Margins instead of flex gap, and :focus-visible kept in its own rules: older TV engines
+   (Chromium < 84) ignore gap and drop whole selector lists containing unknown pseudo-classes. */
+.mediarowHomeRows {
+    display: block;
+    width: 100%;
+    margin: 1.5em 0;
+}
+
+.mediarowHomeFilters {
+    display: flex;
+    flex-wrap: wrap;
+    margin: 0 0 1.5em -.3em;
+}
+
+.mediarowHomeFilter {
+    font: inherit;
+    color: inherit;
+    margin: .3em;
+    padding: .65em 1.3em;
+    border: 1px solid rgba(127, 127, 127, .5);
+    border-radius: 2em;
+    background: rgba(127, 127, 127, .1);
+    cursor: pointer;
+}
+
+.mediarowHomeFilter[aria-pressed="true"] {
+    background: #00a4dc;
+    border-color: #00a4dc;
+    color: #fff;
+}
+
+.mediarowHomeFilter:focus {
+    outline: 2px solid #00a4dc;
+    outline-offset: 3px;
+}
+
+.mediarowHomeStatus {
+    opacity: .8;
+    margin-bottom: 1em;
+}
+
+.mediarowPlaybackError {
+    margin: 0 0 1em;
+    padding: .75em 1em;
+    border-left: 3px solid #e5a00d;
+    background: rgba(229, 160, 13, .12);
+}
+
+.mediarowHomeRow {
+    margin: 0 0 1.75em;
+}
+
+.mediarowHomeRowTitle {
+    margin: 0;
+    font-size: 1.35em;
+}
+
+.mediarowHomeRowHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: .55em;
+}
+
+.mediarowCarouselControls {
+    display: flex;
+    margin-left: 1em;
+}
+
+.mediarowCarouselButton {
+    border: 1px solid rgba(127, 127, 127, .5);
+    border-radius: 50%;
+    background: rgba(127, 127, 127, .15);
+    color: inherit;
+    width: 2.5em;
+    height: 2.5em;
+    margin-left: .5em;
+    cursor: pointer;
+    font: inherit;
+}
+
+.mediarowCarouselButton:hover {
+    background: rgba(0, 164, 220, .3);
+    outline: 2px solid #00a4dc;
+}
+
+.mediarowCarouselButton:focus {
+    background: rgba(0, 164, 220, .3);
+    outline: 2px solid #00a4dc;
+}
+
+.mediarowCarouselButton[hidden] {
+    display: none;
+}
+
+.mediarowHomeRowItems {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: .4em 3.3% .8em;
+    position: relative;
+    direction: ltr;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    touch-action: pan-x pan-y pinch-zoom;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+    overflow-anchor: none;
+}
+
+.mediarowHomeRowItems::-webkit-scrollbar {
+    display: none;
+}
+
+.mediarowHomeRowItems.isDragging,
+.mediarowHomeRowItems.isDragging .mediarowHomeCard {
+    cursor: grabbing;
+}
+
+.mediarowHomeCard {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 225px;
+    width: 225px;
+    margin-right: .75em;
+    color: inherit;
+    text-decoration: none;
+    cursor: inherit;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform .15s ease-out;
+}
+
+.mediarowHomeCardImage {
+    display: block;
+    width: 100%;
+    height: 337.5px;
+    object-fit: cover;
+    border-radius: 4px;
+    background: rgba(127, 127, 127, .2);
+}
+
+/* Remote/keyboard focus ring for TVs, consoles and desktop keyboard users. */
+.mediarowHomeCard:focus .mediarowHomeCardImage {
+    box-shadow: 0 0 0 3px #00a4dc;
+}
+
+.mediarowHomeCard:focus {
+    transform: scale(1.04);
+}
+
+.mediarowHomeCard[aria-busy="true"] {
+    opacity: .6;
+}
+
+.mediarowHomeCardTitle {
+    display: -webkit-box;
+    overflow: hidden;
+    min-height: 2.5em;
+    margin-top: .35em;
+    line-height: 1.25em;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+    text-overflow: ellipsis;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+@media (max-width: 1000px) {
+    .mediarowHomeCard {
+        flex-basis: 170px;
+        width: 170px;
+    }
+
+    .mediarowHomeCardImage {
+        height: 255px;
+    }
+}
+
+@media (max-width: 600px) {
+    .mediarowHomeRowTitle {
+        font-size: 1.15em;
+    }
+
+    .mediarowHomeCard {
+        flex-basis: 130px;
+        width: 130px;
+        margin-right: .5em;
+    }
+
+    .mediarowHomeCardImage {
+        height: 195px;
+    }
+
+    .mediarowCarouselControls {
+        display: none;
+    }
+}
+
+/* Jellyfin adds .layout-tv on TVs and consoles: rely on the D-pad there, not on-screen arrows. */
+.layout-tv .mediarowCarouselControls {
+    display: none;
+}
+
+.layout-tv .mediarowHomeCard:focus {
+    transform: scale(1.07);
+}
+
+@media (hover: none) {
+    .mediarowHomeRowItems {
+        cursor: auto;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mediarowHomeCard {
+        transition: none;
+    }
+}
+
+/* Same side inset as Jellyfin's .padded-left so rows line up with the native sections and stay
+   clear of TV overscan and phone notches; the scrollers themselves still bleed to the screen edge. */
+.mediarowHomeFilters,
+.mediarowHomeStatus,
+.mediarowPlaybackError,
+.mediarowHomeRowHeader {
+    margin-left: 3.3%;
+    margin-right: 3.3%;
+}
+
+@supports (width: max(1px, 1px)) {
+    .mediarowHomeFilters,
+    .mediarowHomeStatus,
+    .mediarowPlaybackError,
+    .mediarowHomeRowHeader {
+        margin-left: max(env(safe-area-inset-left), 3.3%);
+        margin-right: max(env(safe-area-inset-right), 3.3%);
+    }
+
+    .mediarowHomeRowItems {
+        padding-left: max(env(safe-area-inset-left), 3.3%);
+        padding-right: max(env(safe-area-inset-right), 3.3%);
+    }
+}

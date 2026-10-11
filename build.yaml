@@ -1,0 +1,23 @@
+name: "Jellyfin Mediarow"
+guid: "68cff731-4588-4ab3-aa0d-9ca73648679a"
+version: "2.0.0"
+targetAbi: "12.0.0.0"
+framework: "net10.0"
+owner: "UserPhase"
+overview: "Netflix-style Home screen rows for Jellyfin"
+description: >
+  Turns the Jellyfin home screen into a Netflix-style streaming page with
+  Popular and genre rows from Stremio catalogs. Browse and stream movies,
+  series and anime with native AIOStreams playback, without importing the
+  catalog. Fork of pythcon/jellyfin-dynamic-library.
+category: "Metadata"
+artifacts:
+  - "Jellyfin.Plugin.Mediarow.dll"
+changelog: |-
+  ## 2.0.0
+  - Renamed to Jellyfin Mediarow
+  - Jellyfin 12 / .NET 10 support
+  - Hybrid Home with mixed movie and series rows, category tabs, and draggable carousels
+  - Native AIOStreams playback with ordered, fully labelled versions, probing, and header/HLS relay
+  - Faster Home loading: shared catalog fetches, startup row warm-up, and cached posters
+  - Preserved dynamic search, metadata, playback, and persistence pipeline

@@ -1,0 +1,167 @@
+name: Build Plugin
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore tests/Jellyfin.Plugin.Mediarow.Tests/Jellyfin.Plugin.Mediarow.Tests.csproj
+
+      - name: Build
+        run: dotnet build Jellyfin.Plugin.Mediarow/Jellyfin.Plugin.Mediarow.csproj -c Release --no-restore
+
+      - name: Test
+        run: dotnet test tests/Jellyfin.Plugin.Mediarow.Tests/Jellyfin.Plugin.Mediarow.Tests.csproj -c Release --no-restore
+
+      - name: Test Home browser behavior
+        run: node --test tests/home-layout.test.cjs tests/home-carousel.test.cjs tests/home-hybrid.test.cjs
+
+      - name: Create plugin package
+        run: |
+          # Use tag version for releases, csproj version otherwise
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION=$(grep -oPm1 "(?<=<Version>)[^<]+" Jellyfin.Plugin.Mediarow/Jellyfin.Plugin.Mediarow.csproj)
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+
+          mkdir -p artifacts/Mediarow
+          cp Jellyfin.Plugin.Mediarow/bin/Release/net10.0/Jellyfin.Plugin.Mediarow.dll artifacts/Mediarow/
+
+          # Create meta.json
+          cat > artifacts/Mediarow/meta.json << EOF
+          {
+            "guid": "68cff731-4588-4ab3-aa0d-9ca73648679a",
+            "name": "Jellyfin Mediarow",
+            "description": "Netflix-style Home screen rows for Jellyfin from Stremio catalogs, with native AIOStreams playback and optional .strm persistence.",
+            "overview": "Netflix-style Home screen rows for Jellyfin",
+            "owner": "${{ github.repository_owner }}",
+            "category": "Metadata",
+            "version": "${VERSION}.0",
+            "targetAbi": "12.0.0.0",
+            "status": "Active"
+          }
+          EOF
+
+          # Create ZIP
+          cd artifacts
+          zip -r mediarow-${VERSION}.zip Mediarow/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mediarow
+          path: artifacts/mediarow-*.zip
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/mediarow-*.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-manifest:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Switch to gh-pages
+        run: |
+          if git ls-remote --exit-code --heads origin gh-pages > /dev/null; then
+            git checkout gh-pages
+          else
+            git checkout --orphan gh-pages
+            git rm -rf --quiet .
+          fi
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mediarow
+          path: ${{ runner.temp }}/release
+
+      - name: Calculate checksum and update manifest
+        env:
+          OWNER: ${{ github.repository_owner }}
+          REPOSITORY: ${{ github.repository }}
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          CHECKSUM=$(md5sum "${RUNNER_TEMP}/release/mediarow-${VERSION}.zip" | cut -d ' ' -f 1)
+
+          # Create new version entry
+          NEW_VERSION=$(jq -n \
+            --arg version "${VERSION}.0" \
+            --arg changelog "See GitHub releases for changelog" \
+            --arg targetAbi "12.0.0.0" \
+            --arg sourceUrl "https://github.com/${REPOSITORY}/releases/download/v${VERSION}/mediarow-${VERSION}.zip" \
+            --arg checksum "${CHECKSUM}" \
+            --arg timestamp "${TIMESTAMP}" \
+            '{
+              version: $version,
+              changelog: $changelog,
+              targetAbi: $targetAbi,
+              sourceUrl: $sourceUrl,
+              checksum: $checksum,
+              timestamp: $timestamp
+            }')
+
+          # Check if manifest exists and has versions
+          if [ -f manifest.json ] && jq -e '.[0].versions' manifest.json > /dev/null 2>&1; then
+            # Prepend new version to existing versions array (newer versions first)
+            jq --argjson newVersion "$NEW_VERSION" \
+              '.[0].versions = [$newVersion] + [.[0].versions[] | select(.version != $newVersion.version)]' \
+              manifest.json > manifest.tmp && mv manifest.tmp manifest.json
+          else
+            # Create new manifest from scratch
+            jq -n --argjson newVersion "$NEW_VERSION" \
+              --arg owner "$OWNER" \
+              --arg imageUrl "https://${OWNER}.github.io/${REPO_NAME}/Mediarow.png" \
+              '[{
+                guid: "68cff731-4588-4ab3-aa0d-9ca73648679a",
+                name: "Jellyfin Mediarow",
+                description: "Netflix-style Home screen rows for Jellyfin from Stremio catalogs, with native AIOStreams playback and optional .strm persistence.",
+                overview: "Netflix-style Home screen rows for Jellyfin",
+                owner: $owner,
+                category: "Metadata",
+                imageUrl: $imageUrl,
+                versions: [$newVersion]
+              }]' > manifest.json
+          fi
+
+      - name: Commit and push manifest
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add manifest.json
+          git commit -m "Update manifest for ${GITHUB_REF#refs/tags/}" || echo "No changes to commit"
+          git push
