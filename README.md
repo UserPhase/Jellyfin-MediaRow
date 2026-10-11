@@ -4,7 +4,8 @@
 
 > Built for Jellyfin 12 (.NET 10). Works in Jellyfin Web, the Android/iOS apps, Jellyfin Media Player, and TV apps such as Android TV, Tizen, webOS, Swiftfin and Findroid. See [Client support](#client-support).
 
-<!-- Screenshot: add docs/home.png (Netflix-style Home rows) here -->
+![example image](image.png)
+![example image 2](image-1.png)
 
 ## Why Mediarow?
 
