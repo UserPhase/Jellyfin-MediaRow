@@ -1,5 +1,9 @@
 using Jellyfin.Data.Enums;
+using Jellyfin.Database.Implementations.Entities;
+using Jellyfin.Plugin.Mediarow.Extensions;
 using Jellyfin.Plugin.Mediarow.Services;
+using MediaBrowser.Controller.Dto;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Querying;
 using Microsoft.AspNetCore.Mvc;
@@ -16,14 +20,50 @@ namespace Jellyfin.Plugin.Mediarow.Filters;
 public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
 {
     private readonly DynamicItemCache _itemCache;
+    private readonly ILibraryManager _libraryManager;
+    private readonly IUserManager _userManager;
+    private readonly IDtoService _dtoService;
+    private readonly PersistenceService _persistenceService;
+    private readonly SeriesResumeResolver _seriesResumeResolver;
     private readonly ILogger<SeasonEpisodeFilter> _logger;
 
     public SeasonEpisodeFilter(
         DynamicItemCache itemCache,
+        ILibraryManager libraryManager,
+        IUserManager userManager,
+        IDtoService dtoService,
+        PersistenceService persistenceService,
+        SeriesResumeResolver seriesResumeResolver,
         ILogger<SeasonEpisodeFilter> logger)
     {
         _itemCache = itemCache;
+        _libraryManager = libraryManager;
+        _userManager = userManager;
+        _dtoService = dtoService;
+        _persistenceService = persistenceService;
+        _seriesResumeResolver = seriesResumeResolver;
         _logger = logger;
+    }
+
+    private bool TryGetUser(ActionExecutingContext context, out User user)
+    {
+        user = null!;
+        Guid userId = context.ActionArguments.TryGetValue("userId", out var value) && value is Guid id && id != Guid.Empty
+            ? id
+            : Guid.Empty;
+        if (userId == Guid.Empty && !context.TryGetUserId(out userId))
+        {
+            return false;
+        }
+
+        var found = _userManager.GetUserById(userId);
+        if (found is null)
+        {
+            return false;
+        }
+
+        user = found;
+        return true;
     }
 
     // Run before other filters
@@ -223,9 +263,40 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
             return;
         }
 
-        // Check if this is a dynamic series
         var seriesItem = _itemCache.GetItem(seriesId);
-        if (seriesItem == null || !SearchResultFactory.IsDynamicItem(seriesItem))
+        var isDynamic = seriesItem != null && SearchResultFactory.IsDynamicItem(seriesItem);
+        var librarySeries = isDynamic
+            ? _persistenceService.FindExistingLibraryItem(seriesItem!)
+            : _libraryManager.GetItemById(seriesId);
+
+        if (librarySeries?.GetBaseItemKind() == BaseItemKind.Series)
+        {
+            if (TryGetUser(context, out var user))
+            {
+                var resumeEpisode = _seriesResumeResolver.FindResumeEpisode(user, librarySeries);
+                if (resumeEpisode != null)
+                {
+                    _logger.LogDebug("[Mediarow] HandleGetNextUp: Returning in-progress episode {Name} for series {Id}", resumeEpisode.Name, librarySeries.Id);
+                    context.Result = new OkObjectResult(new QueryResult<BaseItemDto>
+                    {
+                        Items = [_dtoService.GetBaseItemDto(resumeEpisode, new DtoOptions(true), user)],
+                        TotalRecordCount = 1
+                    });
+                    return;
+                }
+            }
+
+            if (isDynamic)
+            {
+                // Let Jellyfin compute Next Up from the imported series' watch history.
+                context.ActionArguments["seriesId"] = librarySeries.Id;
+            }
+
+            await next();
+            return;
+        }
+
+        if (!isDynamic)
         {
             // Not a dynamic series, let Jellyfin handle it
             await next();

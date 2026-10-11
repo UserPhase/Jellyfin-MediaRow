@@ -274,55 +274,106 @@ public class StremioCatalogProvider : ICatalogProvider
             return Array.Empty<CatalogItem>();
         }
 
-        // Check cache first
-        var cacheKey = $"{SearchCachePrefix}{type}:{query.ToLowerInvariant()}";
-        if (_cache.TryGetValue<IReadOnlyList<CatalogItem>>(cacheKey, out var cachedResults) && cachedResults != null)
-        {
-            _logger.LogDebug("[StremioCatalog] Cache hit for {Type} search: {Query} ({Count} results)",
-                type, query, cachedResults.Count);
-            return cachedResults.Take(maxResults).ToList();
-        }
-
         try
         {
             var client = CreateClient();
             var baseUrl = GetBaseUrl();
-            var encodedQuery = Uri.EscapeDataString(query);
+            var catalogId = await GetSearchCatalogIdAsync(client, type, cancellationToken).ConfigureAwait(false);
+            var url = $"{baseUrl}/catalog/{type}/{Uri.EscapeDataString(catalogId)}/search={Uri.EscapeDataString(query)}.json";
+            var cacheKey = $"{SearchCachePrefix}{url.ToLowerInvariant()}";
 
-            // Stremio catalog search format: /catalog/{type}/search/search={query}.json
-            // The "search" catalog ID is used by AIOMetadata, Cinemeta, and other Stremio addons
-            var url = $"{baseUrl}/catalog/{type}/search/search={encodedQuery}.json";
-
-            _logger.LogDebug("[StremioCatalog] Searching: {Url}", url);
-
-            var response = await client.GetAsync(url, cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
+            // A shared uncancelled fetch lets a slow search finish and warm the cache after its caller gives up.
+            var results = await GetOrFetchAsync<IReadOnlyList<CatalogItem>>(cacheKey, async () =>
             {
-                _logger.LogWarning("[StremioCatalog] Search failed with status {StatusCode} for {Type}: {Query}",
-                    response.StatusCode, type, query);
-                return Array.Empty<CatalogItem>();
-            }
+                _logger.LogDebug("[StremioCatalog] Searching: {Url}", url);
+                using var response = await client.GetAsync(url, CancellationToken.None).ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("[StremioCatalog] Search failed with status {StatusCode} for {Type}: {Query}",
+                        response.StatusCode, type, query);
+                    return (Array.Empty<CatalogItem>(), null);
+                }
 
-            var catalogResponse = await response.Content.ReadFromJsonAsync<StremioCatalogResponse>(cancellationToken);
-
-            var results = catalogResponse?.Metas
-                .Select(m => ConvertMetaPreviewToCatalogItem(m, type))
-                .ToList() ?? new List<CatalogItem>();
-
-            // Cache the results
-            _cache.Set(cacheKey, (IReadOnlyList<CatalogItem>)results, CacheDuration);
+                var catalogResponse = await response.Content
+                    .ReadFromJsonAsync<StremioCatalogResponse>(CancellationToken.None)
+                    .ConfigureAwait(false);
+                IReadOnlyList<CatalogItem> converted = catalogResponse?.Metas
+                    .Select(m => ConvertMetaPreviewToCatalogItem(m, type))
+                    .ToList() ?? new List<CatalogItem>();
+                return (converted, CacheDuration);
+            }, cancellationToken).ConfigureAwait(false);
 
             _logger.LogDebug("[StremioCatalog] Search returned {Count} results for {Type}: {Query}",
                 results.Count, type, query);
-
             return results.Take(maxResults).ToList();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return Array.Empty<CatalogItem>();
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "[StremioCatalog] Error searching for {Type}: {Query}", type, query);
             return Array.Empty<CatalogItem>();
         }
+    }
+
+    private async Task<string> GetSearchCatalogIdAsync(HttpClient client, string type, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var manifest = await GetManifestAsync(client, cancellationToken).ConfigureAwait(false);
+            if (manifest.RootElement.TryGetProperty("catalogs", out var catalogs) &&
+                catalogs.ValueKind == JsonValueKind.Array)
+            {
+                var id = catalogs.EnumerateArray()
+                    .Where(catalog => GetString(catalog, "type")?.Equals(type, StringComparison.OrdinalIgnoreCase) == true &&
+                        IsSearchCapable(catalog))
+                    .Select(catalog => GetString(catalog, "id"))
+                    .Where(catalogId => !string.IsNullOrWhiteSpace(catalogId))
+                    .OrderBy(catalogId => catalogId!.Contains("people", StringComparison.OrdinalIgnoreCase))
+                    .FirstOrDefault();
+                if (id != null)
+                {
+                    return id;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "[StremioCatalog] Could not read search catalogs from the manifest");
+        }
+
+        return "search";
+    }
+
+    private static bool IsSearchCapable(JsonElement catalog)
+    {
+        if (catalog.TryGetProperty("extra", out var extras) && extras.ValueKind == JsonValueKind.Array &&
+            extras.EnumerateArray().Any(extra =>
+                GetString(extra, "name")?.Equals("search", StringComparison.OrdinalIgnoreCase) == true))
+        {
+            return true;
+        }
+
+        return catalog.TryGetProperty("extraSupported", out var supported) &&
+            supported.ValueKind == JsonValueKind.Array &&
+            supported.EnumerateArray().Any(value =>
+                value.ValueKind == JsonValueKind.String &&
+                value.GetString()?.Equals("search", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    private static string? GetString(JsonElement element, string property)
+    {
+        return element.ValueKind == JsonValueKind.Object &&
+            element.TryGetProperty(property, out var value) &&
+            value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : null;
     }
 
     private async Task<CatalogItemDetails?> GetMetaAsync(

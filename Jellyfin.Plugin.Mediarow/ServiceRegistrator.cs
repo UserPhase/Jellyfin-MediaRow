@@ -52,6 +52,7 @@ public class ServiceRegistrator : IPluginServiceRegistrator
             provider.GetRequiredService<MediarowWebIntegrationStartupFilter>());
         services.AddSingleton<SubtitleService>();
         services.AddSingleton<PersistenceService>();
+        services.AddSingleton<SeriesResumeResolver>();
         services.AddSingleton<VirtualResumeTracker>();
         services.AddSingleton<DynamicAioStreamsMediaSourceProvider>();
         services.AddSingleton<IMediaSourceProvider>(provider => provider.GetRequiredService<DynamicAioStreamsMediaSourceProvider>());

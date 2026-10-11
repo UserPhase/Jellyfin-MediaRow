@@ -1,7 +1,5 @@
 using Jellyfin.Plugin.Mediarow.Extensions;
 using Jellyfin.Plugin.Mediarow.Services;
-using MediaBrowser.Controller.Entities;
-using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Querying;
 using Microsoft.AspNetCore.Mvc;
@@ -12,19 +10,17 @@ namespace Jellyfin.Plugin.Mediarow.Filters;
 
 public class SearchActionFilter : IAsyncActionFilter, IOrderedFilter
 {
+    private static readonly TimeSpan CatalogWaitLimit = TimeSpan.FromSeconds(8);
     private readonly MediarowService _mediarowService;
-    private readonly ILibraryManager _libraryManager;
     private readonly VirtualResumeTracker _virtualResumeTracker;
     private readonly ILogger<SearchActionFilter> _logger;
 
     public SearchActionFilter(
         MediarowService mediarowService,
-        ILibraryManager libraryManager,
         VirtualResumeTracker virtualResumeTracker,
         ILogger<SearchActionFilter> logger)
     {
         _mediarowService = mediarowService;
-        _libraryManager = libraryManager;
         _virtualResumeTracker = virtualResumeTracker;
         _logger = logger;
     }
@@ -40,8 +36,8 @@ public class SearchActionFilter : IAsyncActionFilter, IOrderedFilter
             return;
         }
 
-        // Check if this is a search action
-        if (!context.IsApiSearchAction())
+        // Check if this is an Items search. /Search/Hints returns a different result type that Mediarow does not merge.
+        if (!context.IsApiSearchAction() || context.GetControllerName() == "Search")
         {
             await next();
             return;
@@ -63,115 +59,60 @@ public class SearchActionFilter : IAsyncActionFilter, IOrderedFilter
             return;
         }
 
-        // Get pagination parameters
         context.TryGetActionArgument("startIndex", out var startIndex, 0);
-        context.TryGetActionArgument("limit", out var limit, 25);
+        var hasLimit = context.TryGetActionArgument("limit", out var limit, 0);
+        startIndex = Math.Max(0, startIndex);
+        limit = Math.Max(0, limit);
 
-        // Let the original action execute first to get real results
+        // Start the catalog request before Jellyfin's local search so the two run concurrently.
+        var dynamicSearch = SearchCatalogSafelyAsync(
+            searchTerm,
+            requestedTypes,
+            context.HttpContext.RequestAborted);
+
+        // Jellyfin pages its own results, so request everything through the end of this page and page the merge once.
+        context.ActionArguments["startIndex"] = 0;
+        if (hasLimit)
+        {
+            context.ActionArguments["limit"] = startIndex + limit;
+        }
+
         var resultContext = await next();
 
-        // If the original action failed, don't modify
-        // Note: Jellyfin returns ObjectResult, not OkObjectResult
-        if (resultContext.Result is not ObjectResult objectResult)
+        // Jellyfin returns ObjectResult, not OkObjectResult.
+        if (resultContext.Exception is not null ||
+            resultContext.Result is not ObjectResult objectResult ||
+            objectResult.Value is not QueryResult<BaseItemDto> originalResults)
         {
+            ObserveInBackground(dynamicSearch);
             return;
         }
 
-        // Get the original results
-        var originalResults = objectResult.Value as QueryResult<BaseItemDto>;
-        if (originalResults is null)
-        {
-            return;
-        }
-
+        var dynamicResults = new List<BaseItemDto>();
         try
         {
-            var userId = context.TryGetUserId(out var requestUserId) ? requestUserId : Guid.Empty;
-
-            // Search our APIs
-            var dynamicResults = await _mediarowService.SearchAsync(
+            dynamicResults = await dynamicSearch
+                .WaitAsync(CatalogWaitLimit, context.HttpContext.RequestAborted)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            ObserveInBackground(dynamicSearch);
+            _logger.LogInformation(
+                "[Mediarow] Catalog search for '{Query}' exceeded {Seconds}s; returning Jellyfin results while it finishes",
                 searchTerm,
-                requestedTypes,
-                context.HttpContext.RequestAborted);
+                CatalogWaitLimit.TotalSeconds);
+        }
+        catch (OperationCanceledException) when (context.HttpContext.RequestAborted.IsCancellationRequested)
+        {
+            return;
+        }
 
-            if (dynamicResults.Count == 0)
-            {
-                return;
-            }
-
-            // Get IDs of existing items from search results to avoid duplicates
-            var existingTmdbIds = originalResults.Items
-                .Where(i => i.ProviderIds?.ContainsKey("Tmdb") == true)
-                .Select(i => i.ProviderIds["Tmdb"])
-                .ToHashSet();
-
-            var existingTvdbIds = originalResults.Items
-                .Where(i => i.ProviderIds?.ContainsKey("Tvdb") == true)
-                .Select(i => i.ProviderIds["Tvdb"])
-                .ToHashSet();
-
-            var existingImdbIds = originalResults.Items
-                .Where(i => i.ProviderIds?.ContainsKey("Imdb") == true)
-                .Select(i => i.ProviderIds["Imdb"])
-                .ToHashSet();
-
-            // Also check the Jellyfin library for items that might exist there
-            // but weren't in the search results (e.g., persisted items)
-            foreach (var dynamicResult in dynamicResults)
-            {
-                if (dynamicResult.ProviderIds == null) continue;
-
-                // Check IMDB
-                if (dynamicResult.ProviderIds.TryGetValue("Imdb", out var imdbId) &&
-                    !string.IsNullOrEmpty(imdbId) &&
-                    !existingImdbIds.Contains(imdbId))
-                {
-                    if (ItemExistsInLibrary("Imdb", imdbId))
-                    {
-                        existingImdbIds.Add(imdbId);
-                    }
-                }
-
-                // Check TMDB
-                if (dynamicResult.ProviderIds.TryGetValue("Tmdb", out var tmdbId) &&
-                    !string.IsNullOrEmpty(tmdbId) &&
-                    !existingTmdbIds.Contains(tmdbId))
-                {
-                    if (ItemExistsInLibrary("Tmdb", tmdbId))
-                    {
-                        existingTmdbIds.Add(tmdbId);
-                    }
-                }
-
-                // Check TVDB
-                if (dynamicResult.ProviderIds.TryGetValue("Tvdb", out var tvdbId) &&
-                    !string.IsNullOrEmpty(tvdbId) &&
-                    !existingTvdbIds.Contains(tvdbId))
-                {
-                    if (ItemExistsInLibrary("Tvdb", tvdbId))
-                    {
-                        existingTvdbIds.Add(tvdbId);
-                    }
-                }
-            }
-
-            // Filter out duplicates from dynamic results
-            var filteredDynamicResults = dynamicResults.Where(d =>
-            {
-                if (d.ProviderIds == null) return true;
-
-                if (d.ProviderIds.TryGetValue("Imdb", out var imdbId) && existingImdbIds.Contains(imdbId))
-                    return false;
-
-                if (d.ProviderIds.TryGetValue("Tmdb", out var tmdbId) && existingTmdbIds.Contains(tmdbId))
-                    return false;
-
-                if (d.ProviderIds.TryGetValue("Tvdb", out var tvdbId) && existingTvdbIds.Contains(tvdbId))
-                    return false;
-
-                return true;
-            }).ToList();
-
+        var filteredDynamicResults = new List<BaseItemDto>();
+        try
+        {
+            filteredDynamicResults = CatalogDuplicateFilter.ExcludeKnown(dynamicResults, originalResults.Items);
+            var userId = context.TryGetUserId(out var requestUserId) ? requestUserId : Guid.Empty;
             if (userId != Guid.Empty)
             {
                 foreach (var result in filteredDynamicResults)
@@ -183,63 +124,57 @@ public class SearchActionFilter : IAsyncActionFilter, IOrderedFilter
                     }
                 }
             }
-
-            if (filteredDynamicResults.Count == 0)
-            {
-                _logger.LogDebug("All dynamic results were duplicates of existing items");
-                return;
-            }
-
-            // Merge results: original items first, then dynamic items
-            var mergedItems = originalResults.Items.ToList();
-            mergedItems.AddRange(filteredDynamicResults);
-
-            // Apply pagination to merged results
-            var totalCount = mergedItems.Count;
-            var pagedItems = mergedItems.Skip(startIndex).Take(limit).ToArray();
-
-            _logger.LogInformation(
-                "Search for '{Query}' merged {OriginalCount} original + {DynamicCount} dynamic results (total: {Total})",
-                searchTerm,
-                originalResults.Items.Count,
-                filteredDynamicResults.Count,
-                totalCount);
-
-            // Replace the result
-            resultContext.Result = new OkObjectResult(new QueryResult<BaseItemDto>
-            {
-                Items = pagedItems,
-                TotalRecordCount = totalCount
-            });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error merging dynamic search results for '{Query}'", searchTerm);
-            // Keep original results on error
+            filteredDynamicResults.Clear();
         }
+
+        var mergedItems = originalResults.Items.Concat(filteredDynamicResults);
+        var pagedItems = (hasLimit
+                ? mergedItems.Skip(startIndex).Take(limit)
+                : mergedItems.Skip(startIndex))
+            .ToArray();
+        var totalCount = Math.Max(originalResults.TotalRecordCount, originalResults.Items.Count) + filteredDynamicResults.Count;
+
+        _logger.LogInformation(
+            "Search for '{Query}' merged {OriginalCount} original + {DynamicCount} dynamic results (total: {Total})",
+            searchTerm,
+            originalResults.Items.Count,
+            filteredDynamicResults.Count,
+            totalCount);
+
+        resultContext.Result = new OkObjectResult(new QueryResult<BaseItemDto>
+        {
+            Items = pagedItems,
+            StartIndex = startIndex,
+            TotalRecordCount = totalCount
+        });
     }
 
-    /// <summary>
-    /// Check if an item with the given provider ID exists in Jellyfin's library.
-    /// </summary>
-    private bool ItemExistsInLibrary(string providerName, string providerId)
+    private static void ObserveInBackground(Task task)
+    {
+        _ = task.ContinueWith(static t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+    }
+
+    private async Task<List<BaseItemDto>> SearchCatalogSafelyAsync(
+        string searchTerm,
+        HashSet<Jellyfin.Data.Enums.BaseItemKind> requestedTypes,
+        CancellationToken cancellationToken)
     {
         try
         {
-            var query = new InternalItemsQuery
-            {
-                HasAnyProviderId = new Dictionary<string, string> { { providerName, providerId } },
-                Recursive = true,
-                Limit = 1 // We only need to know if at least one exists
-            };
-
-            var result = _libraryManager.GetItemsResult(query);
-            return result.TotalRecordCount > 0;
+            return await _mediarowService.SearchAsync(searchTerm, requestedTypes, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new List<BaseItemDto>();
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Error checking library for {Provider}:{Id}", providerName, providerId);
-            return false;
+            _logger.LogError(ex, "Error searching dynamic catalog for '{Query}'", searchTerm);
+            return new List<BaseItemDto>();
         }
     }
 }

@@ -91,122 +91,33 @@ public class MediarowService
             return new List<BaseItemDto>();
         }
 
-        // Use case-insensitive cache key that includes provider
-        var cacheKey = $"search:{provider.ProviderName}:{query.ToLowerInvariant()}:{string.Join(",", requestedTypes.Order())}";
-
-        // Check cache first
-        if (_cache.TryGetValue<List<BaseItemDto>>(cacheKey, out var cachedResults) && cachedResults != null)
-        {
-            _logger.LogDebug("[Mediarow] Returning cached search results for: {Query} ({Count} items)", query, cachedResults.Count);
-            return cachedResults;
-        }
-
         _logger.LogDebug("[Mediarow] Searching via {Provider} for: {Query}", provider.ProviderName, query);
 
         var tasks = new List<Task<IReadOnlyList<CatalogItem>>>();
-
-        // Search movies
         if (requestedTypes.Contains(BaseItemKind.Movie))
         {
             tasks.Add(provider.SearchMoviesAsync(query, config.MaxMovieResults, cancellationToken));
         }
 
-        // Search TV shows
         if (requestedTypes.Contains(BaseItemKind.Series))
         {
             tasks.Add(provider.SearchSeriesAsync(query, config.MaxTvShowResults, cancellationToken));
         }
 
-        var catalogResults = (await Task.WhenAll(tasks)).SelectMany(r => r).ToList();
-
-        // Get existing provider IDs to filter out items already in library
-        var existingImdbIds = GetExistingProviderIds("Imdb", null);
-        var existingTmdbIds = GetExistingProviderIds("Tmdb", typeof(MediaBrowser.Controller.Entities.Movies.Movie));
-        var existingTvdbIds = GetExistingProviderIds("Tvdb", typeof(MediaBrowser.Controller.Entities.TV.Series));
-
-        // Convert CatalogItems to BaseItemDtos, filtering out existing items
-        var results = new List<BaseItemDto>();
+        var catalogResults = (await Task.WhenAll(tasks).ConfigureAwait(false)).SelectMany(r => r);
+        var dtos = new List<BaseItemDto>();
         foreach (var item in catalogResults)
         {
-            // Skip if already in library
-            if (!string.IsNullOrEmpty(item.ImdbId) && existingImdbIds.Contains(item.ImdbId))
-            {
-                _logger.LogDebug("[Mediarow] Skipping '{Name}' (IMDB:{Id}) - already in library", item.Name, item.ImdbId);
-                continue;
-            }
-            if (!string.IsNullOrEmpty(item.TmdbId) && existingTmdbIds.Contains(item.TmdbId))
-            {
-                _logger.LogDebug("[Mediarow] Skipping '{Name}' (TMDB:{Id}) - already in library", item.Name, item.TmdbId);
-                continue;
-            }
-            if (!string.IsNullOrEmpty(item.TvdbId) && existingTvdbIds.Contains(item.TvdbId))
-            {
-                _logger.LogDebug("[Mediarow] Skipping '{Name}' (TVDB:{Id}) - already in library", item.Name, item.TvdbId);
-                continue;
-            }
-
-            var dto = await _searchResultFactory.CreateDtoFromCatalogItemAsync(item, cancellationToken);
-            results.Add(dto);
+            dtos.Add(await _searchResultFactory.CreateDtoFromCatalogItemAsync(item, cancellationToken).ConfigureAwait(false));
         }
 
-        // Cache results
-        var cacheDuration = TimeSpan.FromMinutes(config.CacheTtlMinutes);
-        _cache.Set(cacheKey, results, cacheDuration);
-
+        // Provider responses are cached; library membership is checked every time so new imports disappear.
+        var results = CatalogDuplicateFilter.ExcludeLibraryItems(
+            _libraryManager,
+            dtos.DistinctBy(item => item.Id).ToList(),
+            _logger);
         _logger.LogDebug("[Mediarow] Search for '{Query}' returned {Count} results", query, results.Count);
         return results;
-    }
-
-    /// <summary>
-    /// Get all provider IDs of a specific type from existing library items.
-    /// </summary>
-    /// <param name="providerName">The provider name (Imdb, Tmdb, Tvdb)</param>
-    /// <param name="itemType">The item type to filter by, or null for both movies and series</param>
-    private HashSet<string> GetExistingProviderIds(string providerName, Type? itemType)
-    {
-        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        try
-        {
-            BaseItemKind[] includeTypes;
-            if (itemType == null)
-            {
-                // Include both movies and series
-                includeTypes = new[] { BaseItemKind.Movie, BaseItemKind.Series };
-            }
-            else if (itemType == typeof(MediaBrowser.Controller.Entities.Movies.Movie))
-            {
-                includeTypes = new[] { BaseItemKind.Movie };
-            }
-            else
-            {
-                includeTypes = new[] { BaseItemKind.Series };
-            }
-
-            var query = new InternalItemsQuery
-            {
-                IncludeItemTypes = includeTypes,
-                Recursive = true
-            };
-
-            var items = _libraryManager.GetItemList(query);
-
-            foreach (var item in items)
-            {
-                if (item.TryGetProviderId(providerName, out var providerId) && !string.IsNullOrEmpty(providerId))
-                {
-                    ids.Add(providerId);
-                }
-            }
-
-            _logger.LogDebug("[Mediarow] Found {Count} existing {Provider} IDs in library", ids.Count, providerName);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "[Mediarow] Error getting existing provider IDs for {Provider}", providerName);
-        }
-
-        return ids;
     }
 
     /// <summary>

@@ -85,6 +85,61 @@ public sealed class StremioCatalogProviderTests
         Assert.Equal(4, requests);
     }
 
+    [Fact]
+    public async Task ConcurrentSearches_UseManifestSearchCatalogAndShareOneRequest()
+    {
+        const string searchManifest = """{"catalogs":[{"type":"movie","id":"top"},{"type":"movie","id":"people-search","extra":[{"name":"search"}]},{"type":"movie","id":"aio.search","extra":[{"name":"search","isRequired":true}]}]}""";
+        var gate = new TaskCompletionSource();
+        var requests = new List<string>();
+        var handler = new Handler(async request =>
+        {
+            lock (requests)
+            {
+                requests.Add(Uri.UnescapeDataString(request.RequestUri!.AbsolutePath));
+            }
+
+            var isManifest = request.RequestUri!.AbsolutePath.EndsWith("manifest.json", StringComparison.Ordinal);
+            if (!isManifest)
+            {
+                await gate.Task;
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(isManifest ? searchManifest : Catalog, Encoding.UTF8, "application/json")
+            };
+        });
+        using MemoryCache cache = new(new MemoryCacheOptions());
+        var provider = new TestProvider(new ClientFactory(handler), cache, "https://catalog.test");
+
+        var searches = Enumerable.Range(0, 6).Select(_ => provider.SearchMoviesAsync("Star Wars", 1)).ToList();
+        await Task.Delay(50);
+        gate.SetResult();
+        var results = await Task.WhenAll(searches);
+
+        Assert.All(results, items => Assert.Equal("One", Assert.Single(items).Name));
+        Assert.Equal(["/manifest.json", "/catalog/movie/aio.search/search=Star Wars.json"], requests);
+        Assert.Equal(2, (await provider.SearchMoviesAsync("star wars", 10)).Count);
+        Assert.Equal(2, requests.Count);
+    }
+
+    [Fact]
+    public async Task Search_FallsBackToConventionalSearchCatalog()
+    {
+        var requests = new List<string>();
+        var handler = new Handler(request =>
+        {
+            requests.Add(request.RequestUri!.AbsolutePath);
+            var body = request.RequestUri.AbsolutePath.EndsWith("manifest.json", StringComparison.Ordinal) ? Manifest : Catalog;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") });
+        });
+        using MemoryCache cache = new(new MemoryCacheOptions());
+        var provider = new TestProvider(new ClientFactory(handler), cache, "https://catalog.test");
+
+        Assert.Equal(2, (await provider.SearchSeriesAsync("dark", 5)).Count);
+        Assert.Equal(["/manifest.json", "/catalog/series/search/search=dark.json"], requests);
+    }
+
     private sealed class TestProvider(IHttpClientFactory factory, IMemoryCache cache, string url)
         : StremioCatalogProvider(factory, cache, NullLogger<StremioCatalogProvider>.Instance)
     {
