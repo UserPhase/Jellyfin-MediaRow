@@ -163,5 +163,9 @@ jobs:
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git add manifest.json
-          git commit -m "Update manifest for ${GITHUB_REF#refs/tags/}" || echo "No changes to commit"
-          git push
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update manifest for ${GITHUB_REF#refs/tags/}"
+          fi
+          git push --set-upstream origin gh-pages
