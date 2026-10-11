@@ -117,7 +117,12 @@
             headers: headers
         }).then(function (response) {
             if (!response.ok) {
-                throw new Error('Resolve failed: ' + response.status);
+                return response.text().then(function (body) {
+                    var error = new Error('Resolve failed: ' + response.status);
+                    error.status = response.status;
+                    error.responseText = body;
+                    throw error;
+                });
             }
             return response.json();
         });
@@ -154,7 +159,25 @@
         }, function (error) {
             finish();
             console.warn('Mediarow playback resolve failed', error);
-            showPlaybackError(card, 'This title could not be opened for playback. Enable persistence, add its folder as a Jellyfin library, and check the addon settings.');
+            var message = 'This title could not be opened for playback. Check persistence, library folders and addon settings.';
+            var details = error && error.responseJSON;
+            if (!details && error && error.responseText) {
+                try {
+                    details = JSON.parse(error.responseText);
+                } catch (parseError) {
+                    console.warn('Mediarow playback error response was not JSON', parseError);
+                }
+            }
+            if (details && typeof details.Error === 'string') {
+                message = details.Error;
+            } else if (error && error.status === 401) {
+                message = 'Your Jellyfin session has expired. Sign in again and retry.';
+            } else if (error && error.status === 403) {
+                message = 'Jellyfin denied this playback request. Check this user\'s permissions.';
+            } else if (error && error.status === 404) {
+                message = 'This catalog title or playback endpoint is unavailable. Refresh Home and check that Mediarow is installed and enabled.';
+            }
+            showPlaybackError(card, message);
         });
     }
 

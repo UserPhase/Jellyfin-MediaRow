@@ -248,9 +248,36 @@ test('poster clicks navigate only to resolved IDs and surface pending or failed 
     outcome = new Error('not configured');
     await click();
     assert.match(notices.at(-1), /could not be opened/);
+    outcome = Object.assign(new Error('Bad request'), {
+        responseJSON: { Error: 'Enable persistence and automatic library scanning.' }
+    });
+    await click();
+    assert.equal(notices.at(-1), outcome.responseJSON.Error);
+    outcome = Object.assign(new Error('Bad request'), {
+        status: 400, responseText: JSON.stringify({ Error: 'Add the persistent folder as a Jellyfin library.' })
+    });
+    await click();
+    assert.equal(notices.at(-1), 'Add the persistent folder as a Jellyfin library.');
+    outcome = Object.assign(new Error('Unauthorized'), { status: 401, responseText: '<html>Sign in</html>' });
+    await click();
+    assert.match(notices.at(-1), /session has expired/);
     assert.deepEqual(navigations, ['native-movie']);
     assert.equal(card.dataset.mediarowResolving, undefined);
     outcome = { ItemId: 'virtual-movie', BrowseOnly: true };
     await click();
     assert.deepEqual(navigations, ['native-movie', 'virtual-movie']);
+});
+
+test('fetch playback resolver retains HTTP status and error response for the UI', async () => {
+    const context = vm.createContext({
+        fetch: async () => ({ ok: false, status: 400,
+            text: async () => JSON.stringify({ Error: 'Enable persistence.' }) })
+    });
+    vm.runInContext(source.slice(source.indexOf('    function resolvePlaybackItem('),
+        source.indexOf('    function openResolvedDetails(')), context);
+    await assert.rejects(context.resolvePlaybackItem({ getUrl: url => url }, 'title'), error => {
+        assert.equal(error.status, 400);
+        assert.equal(JSON.parse(error.responseText).Error, 'Enable persistence.');
+        return true;
+    });
 });

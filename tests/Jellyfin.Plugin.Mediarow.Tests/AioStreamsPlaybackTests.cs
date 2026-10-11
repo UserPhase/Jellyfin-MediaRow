@@ -365,7 +365,7 @@ public sealed class AioStreamsPlaybackTests
             var nfo = XDocument.Load(Directory.GetFiles(moviePath!, "*.nfo").Single());
             Assert.Equal("tt1234", nfo.Root!.Element("uniqueid")!.Value);
             Assert.Equal("Test & Movie", nfo.Root.Element("title")!.Value);
-            var series = new BaseItemDto { Id = Guid.NewGuid(), Type = Jellyfin.Data.Enums.BaseItemKind.Series, Name = "Test Show", ProviderIds = new() { ["Imdb"] = "tt5678" } };
+            var series = new BaseItemDto { Id = Guid.NewGuid(), Type = Jellyfin.Data.Enums.BaseItemKind.Series, Name = "Test Show", Status = "Ended", ProviderIds = new() { ["Imdb"] = "tt5678" } };
             cache.StoreEpisodesForSeries(series.Id, new List<BaseItemDto>
             {
                 new()
@@ -378,6 +378,7 @@ public sealed class AioStreamsPlaybackTests
             var seriesPath = await persistence.PersistSeriesAsync(series);
             Assert.Equal("tt5678", XDocument.Load(Path.Combine(seriesPath!, "tvshow.nfo")).Root!.Element("uniqueid")!.Value);
             Assert.Equal("true", XDocument.Load(Path.Combine(seriesPath!, "tvshow.nfo")).Root!.Element("lockdata")!.Value);
+            Assert.Equal("Ended", XDocument.Load(Path.Combine(seriesPath!, "tvshow.nfo")).Root!.Element("status")!.Value);
             var seasonNfo = XDocument.Load(Path.Combine(seriesPath!, "Season 02", "season.nfo")).Root!;
             Assert.Equal("2", seasonNfo.Element("seasonnumber")!.Value);
             Assert.Equal("true", seasonNfo.Element("lockdata")!.Value);

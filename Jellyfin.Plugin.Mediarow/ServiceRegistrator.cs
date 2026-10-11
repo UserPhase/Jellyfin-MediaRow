@@ -86,6 +86,7 @@ public class ServiceRegistrator : IPluginServiceRegistrator
 
         // Register scheduled tasks
         services.AddSingleton<IScheduledTask, CacheCleanupTask>();
+        services.AddSingleton<IScheduledTask, WatchedItemCleanupTask>();
         services.AddSingleton<IScheduledTask, ApiHealthCheckTask>();
         services.AddSingleton<IScheduledTask, HomeSectionStartupTask>();
     }

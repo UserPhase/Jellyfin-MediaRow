@@ -624,6 +624,10 @@ public class PersistenceService
         }
 
         var root = new XElement(elementName, new XElement("title", item.Name ?? "Unknown"));
+        if (elementName == "tvshow" && !string.IsNullOrWhiteSpace(item.Status))
+        {
+            root.Add(new XElement("status", item.Status));
+        }
         foreach (var pair in item.ProviderIds ?? new Dictionary<string, string>())
         {
             if (pair.Key is "Imdb" or "Tmdb" or "Tvdb" or "AniList")

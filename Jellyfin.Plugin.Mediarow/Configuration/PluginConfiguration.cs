@@ -408,6 +408,10 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public bool CheckForUpdatesOnView { get; set; } = true;
 
+    public bool CleanupWatchedMovies { get; set; } = false;
+
+    public bool CleanupCompletedSeries { get; set; } = false;
+
     // ==================== Virtual Home Rows ====================
 
     /// <summary>

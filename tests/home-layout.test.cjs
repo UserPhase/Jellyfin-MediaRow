@@ -88,6 +88,19 @@ test('defaults select movies and series, with anime opt-in', async () => {
     assert.deepEqual(saved.HomeRowContentCategories, ['Movies', 'Series']);
 });
 
+test('watched cleanup defaults off and movie/series switches save independently', async () => {
+    const ui = await editor({});
+    assert.equal(ui.get('chkCleanupWatchedMovies').checked, false);
+    assert.equal(ui.get('chkCleanupCompletedSeries').checked, false);
+    ui.get('chkCleanupWatchedMovies').checked = true;
+    const saved = await ui.save();
+    assert.equal(saved.CleanupWatchedMovies, true);
+    assert.equal(saved.CleanupCompletedSeries, false);
+    const reloaded = await editor({ CleanupWatchedMovies: false, CleanupCompletedSeries: true });
+    assert.equal(reloaded.get('chkCleanupWatchedMovies').checked, false);
+    assert.equal(reloaded.get('chkCleanupCompletedSeries').checked, true);
+});
+
 test('embedded clients without replaceChildren load genres and Stremio settings', async () => {
     assert.equal(typeof Element.prototype.replaceChildren, 'undefined');
     const ui = await editor({

@@ -242,6 +242,10 @@ https://your-aiometadata-instance.com/xxxxx
 
 AIOStreams playback uses Jellyfin's native media-source and player pipeline, not a raw browser redirect. Enable persistence and automatic scans, configure an absolute writable persistent folder, then add its `movies` subfolder as a Movies library and `tv`/`anime` subfolders as Shows libraries.
 
+The virtual Popular/genre libraries do not satisfy this requirement: add the filesystem folders under **Dashboard > Libraries**. The path must be visible and writable inside the Jellyfin server (inside the container if using Docker), not merely on the client computer. For example, a persistent root `/mediarow` needs real library locations `/mediarow/movies` and `/mediarow/tv` (plus `/mediarow/anime` if enabled).
+
+If every poster reports that it could not be opened, version 2.0.3 displays the server's specific error instead of replacing it with a generic persistence warning. Check that error before changing addon settings: configuration validation can fail before the addon is queried. Do not share addon URLs, API keys or access tokens when reporting an error.
+
 Opening a virtual title enriches its metadata, saves small `.strm` and `.nfo` files, and waits for Jellyfin to assign a real library ID. Series episodes are populated before creation. Existing matching library titles are reused rather than overwritten.
 
 Stream choices retain the addon's order. Only HTTP(S) media URLs are supported; torrent/info-hash-only and external-player entries are skipped. `notWebReady` is not treated as a reason to discard a stream: Jellyfin probes the selected file and can remux/transcode it. Streams requiring `behaviorHints.proxyHeaders.request` use a private, loopback-only relay because Jellyfin 12's probe does not forward all HTTP headers. The relay supports byte ranges and rewrites HLS playlist/segment/key URLs. Response headers intended for an addon proxy are not applied as request headers.
@@ -353,6 +357,8 @@ Enable persistence to save virtual items as real Jellyfin library items with ful
 | `TriggerLibraryScan` | true | Automatically scan library after creating new items |
 | `CreateUnreleasedMedia` | false | Create media for unreleased content |
 | `CheckForUpdatesOnView` | true | Check for new episodes when viewing persisted series |
+| `CleanupWatchedMovies` | false | Remove generated movie STRM/NFO files and library entries after all enabled users with access have watched |
+| `CleanupCompletedSeries` | false | Remove a generated series only when Jellyfin metadata marks it Ended and all episodes are watched by all enabled users with access |
 
 **Setting Up Persistence:**
 
@@ -361,6 +367,18 @@ Enable persistence to save virtual items as real Jellyfin library items with ful
 3. Add its `movies` subfolder as Movies and its `tv`/`anime` subfolders as Shows libraries; keep automatic library scanning enabled
 4. When you click on a virtual item, it creates a .strm file in this folder
 5. Library scan adds it as a real item with full tracking
+
+### Optional watched-item cleanup
+
+In Mediarow settings, enable **Remove Mediarow movies after watching** and/or **Remove fully watched, ended Mediarow series**. Both switches are **off by default**; enabling them also applies to existing eligible Mediarow items.
+
+The **Mediarow: Clean Up Watched Items** scheduled task runs hourly, or can be run manually under **Dashboard > Scheduled Tasks**. It uses Jellyfin's watched flag, including items manually marked watched, rather than assuming that stopping playback means completion. It waits for every enabled user with access, skips favorites and active/paused playback, and leaves files modified in the last ten minutes until a later run.
+
+Series must have a confirmed **Ended** status, every imported episode (including specials) watched, and no future or unknown episode air dates. Continuing/unknown-status series are never purged. If the metadata provider cannot confirm that a series has ended, it stays in the library.
+
+Cleanup is restricted to the configured persistent root's `movies`, `tv` and `anime` title folders. Every STRM must contain a Mediarow marker (including the legacy marker) and match an indexed library item. Mixed folders with real media, unindexed streams, or symlinks/junctions are refused. Only generated STRM files, their companion NFOs and series/season NFOs are removed; artwork, subtitles and other NFOs are preserved. Empty title/season directories are removed without deleting category or library roots.
+
+The shared library entry is removed too, so a repeat viewing requires opening the virtual catalog title again to reimport it. This is not a watch-history backup feature; use Jellyfin's normal user-data backup or external watch tracking if retaining history is essential.
 
 ## How It Works
 

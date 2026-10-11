@@ -620,6 +620,30 @@
           </div>
 
           <div class="verticalSection">
+            <h3 class="sectionTitle">Watched item cleanup (optional)</h3>
+            <div class="checkboxContainer checkboxContainer-withDescription">
+              <label>
+                <input is="emby-checkbox" type="checkbox" id="chkCleanupWatchedMovies" />
+                <span>Remove Mediarow movies after watching</span>
+              </label>
+            </div>
+            <div class="checkboxContainer checkboxContainer-withDescription">
+              <label>
+                <input is="emby-checkbox" type="checkbox" id="chkCleanupCompletedSeries" />
+                <span>Remove fully watched, ended Mediarow series</span>
+              </label>
+            </div>
+            <div class="fieldDescription">
+              Both options are off by default. An hourly scheduled task removes generated STRM/NFO files
+              and their library entries only after every enabled user with access has watched them.
+              Series must be marked Ended by Jellyfin metadata and every episode (including specials) must be watched.
+              Ongoing or unknown-status series, favorites, active playback, unindexed streams, and folders containing
+              other media are kept. Files changed within the last ten minutes are kept until a later run.
+              Artwork and subtitles are left on disk. Removal affects the shared library; watching again requires reimporting.
+            </div>
+          </div>
+
+          <div class="verticalSection">
             <h3 class="sectionTitle">Cache Settings</h3>
 
             <div class="inputContainer">
@@ -687,6 +711,8 @@
         const chkTriggerLibraryScan = document.querySelector('#chkTriggerLibraryScan');
         const chkCreateUnreleasedMedia = document.querySelector('#chkCreateUnreleasedMedia');
         const chkCheckForUpdatesOnView = document.querySelector('#chkCheckForUpdatesOnView');
+        const chkCleanupWatchedMovies = document.querySelector('#chkCleanupWatchedMovies');
+        const chkCleanupCompletedSeries = document.querySelector('#chkCleanupCompletedSeries');
         const persistenceSettingsContainer = document.querySelector('#persistenceSettings');
         const moviesPathSpan = document.querySelector('#moviesPath');
         const showsPathSpan = document.querySelector('#showsPath');
@@ -1108,6 +1134,8 @@
             chkTriggerLibraryScan.checked = config.TriggerLibraryScan ?? true;
             chkCreateUnreleasedMedia.checked = config.CreateUnreleasedMedia ?? false;
             chkCheckForUpdatesOnView.checked = config.CheckForUpdatesOnView ?? true;
+            chkCleanupWatchedMovies.checked = config.CleanupWatchedMovies ?? false;
+            chkCleanupCompletedSeries.checked = config.CleanupCompletedSeries ?? false;
 
             // Virtual Home row settings
             chkEnableHomeRows.checked = config.EnableHomeRows ?? true;
@@ -1203,6 +1231,8 @@
             config.TriggerLibraryScan = chkTriggerLibraryScan.checked;
             config.CreateUnreleasedMedia = chkCreateUnreleasedMedia.checked;
             config.CheckForUpdatesOnView = chkCheckForUpdatesOnView.checked;
+            config.CleanupWatchedMovies = chkCleanupWatchedMovies.checked;
+            config.CleanupCompletedSeries = chkCleanupCompletedSeries.checked;
 
             // Virtual Home row settings
             config.EnableHomeRows = chkEnableHomeRows.checked;
