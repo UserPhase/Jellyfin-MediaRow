@@ -56,6 +56,52 @@ public sealed class SeriesResumeResolverTests
         Assert.Null(resolver.FindResumeEpisode(TestUser, new Series { Id = Guid.NewGuid() }));
     }
 
+    [Fact]
+    public void FindResumeEpisodes_GroupsBySeriesAndKeepsNewerFinishedEpisodes()
+    {
+        var seriesA = Guid.NewGuid();
+        var seriesB = Guid.NewGuid();
+        var resumeA = new Episode { Id = Guid.NewGuid(), SeriesId = seriesA };
+        var olderA = new Episode { Id = Guid.NewGuid(), SeriesId = seriesA };
+        var resumeB = new Episode { Id = Guid.NewGuid(), SeriesId = seriesB };
+        var finishedB = new Episode { Id = Guid.NewGuid(), SeriesId = seriesB };
+        var dates = new Dictionary<BaseItem, DateTime>
+        {
+            [resumeA] = new(2026, 10, 5),
+            [resumeB] = new(2026, 10, 1),
+            [finishedB] = new(2026, 10, 2)
+        };
+        var library = AioStreamsPlaybackTests.Proxy<ILibraryManager>.Create((method, args) =>
+        {
+            var query = (InternalItemsQuery)args![0]!;
+            if (query.IsResumable == true)
+            {
+                return new List<BaseItem> { resumeA, olderA, resumeB };
+            }
+
+            return query.AncestorIds.SequenceEqual([seriesB]) ? new List<BaseItem> { finishedB } : new List<BaseItem>();
+        });
+        var resolver = new SeriesResumeResolver(library, UserData(dates));
+
+        var result = resolver.FindResumeEpisodes(TestUser);
+
+        Assert.Same(resumeA, Assert.Single(result).Value);
+        Assert.Equal(seriesA, result.Keys.Single());
+    }
+
+    private static IUserDataManager UserData(Dictionary<BaseItem, DateTime> playedDates)
+    {
+        return AioStreamsPlaybackTests.Proxy<IUserDataManager>.Create((method, args) =>
+        {
+            var item = (BaseItem)args![1]!;
+            return new UserItemData
+            {
+                Key = item.Id.ToString("N"),
+                LastPlayedDate = playedDates.TryGetValue(item, out var date) ? date : null
+            };
+        });
+    }
+
     private static SeriesResumeResolver CreateResolver(BaseItem? resumable, BaseItem? played, Dictionary<BaseItem, DateTime> playedDates)
     {
         var library = AioStreamsPlaybackTests.Proxy<ILibraryManager>.Create((method, args) =>

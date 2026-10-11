@@ -253,13 +253,38 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
         });
     }
 
+    private async Task HandleGlobalNextUp(ActionExecutingContext context, ActionExecutionDelegate next)
+    {
+        var executed = await next();
+        if (executed.Exception != null ||
+            executed.Result is not ObjectResult { Value: QueryResult<BaseItemDto> result } ||
+            result.Items.Count == 0 ||
+            !TryGetUser(context, out var user))
+        {
+            return;
+        }
+
+        var resumeEpisodes = _seriesResumeResolver.FindResumeEpisodes(user);
+        if (resumeEpisodes.Count == 0)
+        {
+            return;
+        }
+
+        // Jellyfin only advances Next Up after an episode is finished; show the episode the user is part-way through instead.
+        var dtoOptions = new DtoOptions(true);
+        result.Items = result.Items
+            .Select(item => item.SeriesId is { } id && resumeEpisodes.TryGetValue(id, out var episode) && episode.Id != item.Id
+                ? _dtoService.GetBaseItemDto(episode, dtoOptions, user)
+                : item)
+            .ToArray();
+    }
+
     private async Task HandleGetNextUp(ActionExecutingContext context, ActionExecutionDelegate next)
     {
         // Check if seriesId is provided - this means we're getting next up for a specific series
         if (!context.ActionArguments.TryGetValue("seriesId", out var seriesIdObj) || seriesIdObj is not Guid seriesId)
         {
-            // No seriesId means global Next Up - let Jellyfin handle it
-            await next();
+            await HandleGlobalNextUp(context, next);
             return;
         }
 
