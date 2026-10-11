@@ -27,14 +27,15 @@ public sealed class PlaybackItemResolver(
         }
 
         var config = MediarowPlugin.Instance?.Configuration ?? new PluginConfiguration();
-        if (!config.EnablePersistence || !Path.IsPathFullyQualified(config.PersistentLibraryPath) || !config.TriggerLibraryScan)
+        var subfolder = item.Type == BaseItemKind.Movie ? "movies" : MediarowService.IsAnime(item) ? "anime" : "tv";
+        string libraryPath = config.GetPersistencePath(subfolder);
+        if (!config.EnablePersistence || !Path.IsPathFullyQualified(libraryPath) || !config.TriggerLibraryScan)
         {
-            throw new InvalidOperationException("Enable persistence and automatic library scanning, and set an absolute persistent library folder in Mediarow settings.");
+            throw new InvalidOperationException("Enable persistence and automatic library scanning, and set an absolute Movies/Series/Anime path in Mediarow settings.");
         }
 
         var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        var subfolder = item.Type == BaseItemKind.Movie ? "movies" : MediarowService.IsAnime(item) ? "anime" : "tv";
-        var root = Path.GetFullPath(Path.Combine(config.PersistentLibraryPath, subfolder));
+        var root = Path.GetFullPath(libraryPath);
         bool ContainsRoot(string location)
         {
             var path = Path.TrimEndingDirectorySeparator(Path.GetFullPath(location));
@@ -42,7 +43,7 @@ public sealed class PlaybackItemResolver(
         }
         if (!libraryManager.GetVirtualFolders().Any(folder => folder.Locations.Any(ContainsRoot)))
         {
-            throw new InvalidOperationException("Add the persistent folder (or its movies/tv/anime subfolders) as Jellyfin libraries before opening virtual titles.");
+            throw new InvalidOperationException($"Add the configured {subfolder} path '{libraryPath}' as a Jellyfin library before opening this title.");
         }
 
         await _creationLock.WaitAsync(cancellationToken).ConfigureAwait(false);

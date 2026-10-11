@@ -147,7 +147,11 @@ public sealed class WatchedItemCleanupTests : IDisposable
             });
         }
         var task = new TestTask(library, userManager, data, sessions,
-            new PluginConfiguration { PersistentLibraryPath = _root, CleanupWatchedMovies = true });
+            new PluginConfiguration
+            {
+                PersistentLibraryPath = Path.Combine(_root, "unused"),
+                MoviesLibraryPath = Path.Combine(_root, "movies"), CleanupWatchedMovies = true
+            });
         await task.ExecuteAsync(new Progress<double>(), CancellationToken.None);
         Assert.Equal(expectedRemoval, removed);
         Assert.Equal(!expectedRemoval, File.Exists(stream));
@@ -206,7 +210,12 @@ public sealed class WatchedItemCleanupTests : IDisposable
         var sessions = AioStreamsPlaybackTests.Proxy<ISessionManager>.Create((method, _) =>
             method.Name == "get_Sessions" ? Array.Empty<SessionInfo>() : throw new NotSupportedException(method.Name));
         await new TestTask(library, users, data, sessions,
-            new PluginConfiguration { PersistentLibraryPath = _root, CleanupCompletedSeries = true })
+            new PluginConfiguration
+            {
+                PersistentLibraryPath = Path.Combine(_root, "unused"),
+                SeriesLibraryPath = Path.Combine(_root, "tv"),
+                AnimeLibraryPath = Path.Combine(_root, "anime"), CleanupCompletedSeries = true
+            })
             .ExecuteAsync(new Progress<double>(), CancellationToken.None);
         Assert.Equal(expectedRemoval, removed);
         Assert.Equal(!expectedRemoval, Directory.Exists(series.Path));

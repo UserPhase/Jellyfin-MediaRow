@@ -228,7 +228,7 @@
               <input is="emby-input" type="text" id="txtAIOStreamsUrl" class="emby-input" placeholder="https://aiostreams.elfhosted.com/E2_xxxxx" />
               <div class="fieldDescription">
                 Your full AIOStreams addon URL including the encrypted configuration.<br>
-                Enable Persistence and automatic library scanning below, and add the persistent movies/tv folders as Jellyfin libraries. Selected titles are saved as small STRM/metadata files, not downloaded videos. Jellyfin probes the chosen stream for audio, subtitles, and transcoding.<br>
+                Enable Persistence and automatic library scanning below. Set the Movies and Series paths, then add those exact folders as Jellyfin libraries. Selected titles are saved as small STRM/metadata files, not downloaded videos. Jellyfin probes the chosen stream for audio, subtitles, and transcoding.<br>
                 Get yours from:
                 <ul style="margin: 0.5em 0 0 1.5em; padding: 0;">
                   <li><strong>Self-hosted:</strong> Your AIOStreams instance configuration page</li>
@@ -479,11 +479,21 @@
 
             <div id="persistenceSettings" style="display: none;">
               <div class="inputContainer">
-                <label class="inputLabel inputLabelUnfocused" for="txtPersistentLibraryPath">Library Path:</label>
-                <input is="emby-input" type="text" id="txtPersistentLibraryPath" class="emby-input" placeholder="/mediarow" />
+                <label class="inputLabel inputLabelUnfocused" for="txtMoviesLibraryPath">Movies path:</label>
+                <input is="emby-input" type="text" id="txtMoviesLibraryPath" class="emby-input" placeholder="/mediarow/movies" />
                 <div class="fieldDescription">
-                  Root folder for persistent items. This folder must exist and be writable by Jellyfin.
+                  Exact folder for generated movies. Add this same folder as a Movies library in Jellyfin.
                 </div>
+              </div>
+              <div class="inputContainer">
+                <label class="inputLabel inputLabelUnfocused" for="txtSeriesLibraryPath">Series path:</label>
+                <input is="emby-input" type="text" id="txtSeriesLibraryPath" class="emby-input" placeholder="/mediarow/tv" />
+                <div class="fieldDescription">Exact folder for generated series. Add this same folder as a Shows library.</div>
+              </div>
+              <div class="inputContainer">
+                <label class="inputLabel inputLabelUnfocused" for="txtAnimeLibraryPath">Anime path:</label>
+                <input is="emby-input" type="text" id="txtAnimeLibraryPath" class="emby-input" placeholder="/mediarow/anime" />
+                <div class="fieldDescription">Exact folder for anime series. Add this same folder as a Shows library if using anime.</div>
               </div>
 
               <div style="background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 1em; margin: 1em 0;">
@@ -497,7 +507,9 @@
                   <li><strong>Anime:</strong> <span id="animePath">/mediarow/anime</span></li>
                 </ul>
                 <p style="margin: 0.5em 0 0 0; color: #888; font-size: 0.85em;">
-                  Tip: You can also add a single Mixed Content library pointing to the root path.
+                  These are exact paths: Mediarow does not append movies/tv/anime to them.
+                  Use absolute folders writable by the server (container paths when using Docker).
+                  Changing paths does not move existing items.
                 </p>
               </div>
 
@@ -707,7 +719,9 @@
 
         // Cache DOM elements - persistence settings
         const chkEnablePersistence = document.querySelector('#chkEnablePersistence');
-        const txtPersistentLibraryPath = document.querySelector('#txtPersistentLibraryPath');
+        const txtMoviesLibraryPath = document.querySelector('#txtMoviesLibraryPath');
+        const txtSeriesLibraryPath = document.querySelector('#txtSeriesLibraryPath');
+        const txtAnimeLibraryPath = document.querySelector('#txtAnimeLibraryPath');
         const chkTriggerLibraryScan = document.querySelector('#chkTriggerLibraryScan');
         const chkCreateUnreleasedMedia = document.querySelector('#chkCreateUnreleasedMedia');
         const chkCheckForUpdatesOnView = document.querySelector('#chkCheckForUpdatesOnView');
@@ -1061,12 +1075,14 @@
         }
 
         function updateLibraryPaths() {
-          var basePath = txtPersistentLibraryPath.value.trim() || '/mediarow';
-          // Remove trailing slash if present
-          basePath = basePath.replace(/\/+$/, '');
-          moviesPathSpan.textContent = basePath + '/movies';
-          showsPathSpan.textContent = basePath + '/tv';
-          animePathSpan.textContent = basePath + '/anime';
+          moviesPathSpan.textContent = txtMoviesLibraryPath.value.trim();
+          showsPathSpan.textContent = txtSeriesLibraryPath.value.trim();
+          animePathSpan.textContent = txtAnimeLibraryPath.value.trim();
+        }
+
+        function legacyLibraryPath(config, category) {
+          var root = (config.PersistentLibraryPath || '/mediarow').replace(/[\\/]+$/, '');
+          return root + (root.indexOf('\\') !== -1 ? '\\' : '/') + category;
         }
 
         // Helper to set select value - handles custom element timing
@@ -1130,7 +1146,9 @@
 
             // Persistence settings
             chkEnablePersistence.checked = config.EnablePersistence ?? false;
-            txtPersistentLibraryPath.value = config.PersistentLibraryPath || '/mediarow';
+            txtMoviesLibraryPath.value = config.MoviesLibraryPath || legacyLibraryPath(config, 'movies');
+            txtSeriesLibraryPath.value = config.SeriesLibraryPath || legacyLibraryPath(config, 'tv');
+            txtAnimeLibraryPath.value = config.AnimeLibraryPath || legacyLibraryPath(config, 'anime');
             chkTriggerLibraryScan.checked = config.TriggerLibraryScan ?? true;
             chkCreateUnreleasedMedia.checked = config.CreateUnreleasedMedia ?? false;
             chkCheckForUpdatesOnView.checked = config.CheckForUpdatesOnView ?? true;
@@ -1227,7 +1245,22 @@
 
             // Persistence settings
             config.EnablePersistence = chkEnablePersistence.checked;
-            config.PersistentLibraryPath = txtPersistentLibraryPath.value.trim() || '/mediarow';
+            config.MoviesLibraryPath = txtMoviesLibraryPath.value.trim();
+            config.SeriesLibraryPath = txtSeriesLibraryPath.value.trim();
+            config.AnimeLibraryPath = txtAnimeLibraryPath.value.trim();
+            if (config.EnablePersistence) {
+              const invalidPath = [
+                ['Movies', config.MoviesLibraryPath],
+                ['Series', config.SeriesLibraryPath],
+                ['Anime', config.AnimeLibraryPath]
+              ].find(function (entry) {
+                return !/^(?:\/|[a-z]:[\\/]|\\\\)/i.test(entry[1]);
+              });
+              if (invalidPath) {
+                Dashboard.alert(invalidPath[0] + ' path must be an absolute server-side folder.');
+                return;
+              }
+            }
             config.TriggerLibraryScan = chkTriggerLibraryScan.checked;
             config.CreateUnreleasedMedia = chkCreateUnreleasedMedia.checked;
             config.CheckForUpdatesOnView = chkCheckForUpdatesOnView.checked;
@@ -1288,7 +1321,9 @@
         chkEnableAnimeAudioVersions.addEventListener('change', updateAnimeAudioTracksVisibility);
         chkEnableSubtitles.addEventListener('change', updateSubtitleSettingsVisibility);
         chkEnablePersistence.addEventListener('change', updatePersistenceSettingsVisibility);
-        txtPersistentLibraryPath.addEventListener('input', updateLibraryPaths);
+        txtMoviesLibraryPath.addEventListener('input', updateLibraryPaths);
+        txtSeriesLibraryPath.addEventListener('input', updateLibraryPaths);
+        txtAnimeLibraryPath.addEventListener('input', updateLibraryPaths);
         btnAddHomeGenre.addEventListener('click', addHomeGenre);
         txtNewHomeGenre.addEventListener('keydown', function (event) {
           if (event.key === 'Enter') {

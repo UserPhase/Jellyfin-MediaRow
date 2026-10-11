@@ -32,7 +32,10 @@ public class WatchedItemCleanupTask(
             progress.Report(100);
             return;
         }
-        if (!Path.IsPathFullyQualified(config.PersistentLibraryPath))
+        var categories = new List<string>();
+        if (config.CleanupWatchedMovies) categories.Add("movies");
+        if (config.CleanupCompletedSeries) categories.AddRange(["tv", "anime"]);
+        if (categories.Any(category => !Path.IsPathFullyQualified(config.GetPersistencePath(category))))
         {
             throw new InvalidOperationException("Watched cleanup requires an absolute persistent library folder.");
         }
@@ -54,9 +57,13 @@ public class WatchedItemCleanupTask(
                 continue;
             }
             var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-            string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(config.PersistentLibraryPath));
+            string titlePath = isSeries ? item.Path : Path.GetDirectoryName(item.Path)!;
+            var categoryPaths = (isSeries ? new[] { "tv", "anime" } : new[] { "movies" })
+                .Select(category => Path.TrimEndingDirectorySeparator(Path.GetFullPath(config.GetPersistencePath(category))));
+            string? root = categoryPaths.FirstOrDefault(path =>
+                string.Equals(Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(titlePath)), path, comparison));
             if (!Path.IsPathFullyQualified(item.Path) ||
-                !Path.GetFullPath(item.Path).StartsWith(root + Path.DirectorySeparatorChar, comparison) ||
+                root == null ||
                 (item is Series candidate && candidate.Status != MediaBrowser.Model.Entities.SeriesStatus.Ended) ||
                 (!isSeries && !Path.GetExtension(item.Path).Equals(".strm", StringComparison.OrdinalIgnoreCase)))
             {
@@ -94,9 +101,8 @@ public class WatchedItemCleanupTask(
                     continue;
                 }
 
-                string titlePath = isSeries ? item.Path : Path.GetDirectoryName(item.Path)!;
                 var streams = isSeries ? episodes.Select(episode => episode.Path).ToArray() : [item.Path];
-                var files = WatchedItemCleanup.GetOwnedFiles(config.PersistentLibraryPath, titlePath, isSeries, streams);
+                var files = WatchedItemCleanup.GetOwnedFilesInLibrary(root, titlePath, isSeries, streams);
                 if (files.Count == 0)
                 {
                     logger.LogDebug("[Mediarow] Cleanup skipped unowned or mixed title {ItemId}", item.Id);
@@ -108,7 +114,7 @@ public class WatchedItemCleanupTask(
                     continue;
                 }
 
-                WatchedItemCleanup.DeleteOwnedFiles(config.PersistentLibraryPath, titlePath, isSeries, streams);
+                WatchedItemCleanup.DeleteOwnedFilesInLibrary(root, titlePath, isSeries, streams);
                 libraryManager.DeleteItem(item, new DeleteOptions
                 {
                     DeleteFileLocation = false, DeleteFromExternalProvider = false

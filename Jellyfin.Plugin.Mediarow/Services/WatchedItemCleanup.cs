@@ -16,20 +16,23 @@ public static class WatchedItemCleanup
 
     public static IReadOnlyList<string> GetOwnedFiles(
         string persistentRoot, string titlePath, bool isSeries, IReadOnlyList<string> indexedStreams)
+        => GetOwnedFilesInLibrary(Path.Combine(persistentRoot, isSeries ? "tv" : "movies"), titlePath, isSeries, indexedStreams);
+
+    public static IReadOnlyList<string> GetOwnedFilesInLibrary(
+        string libraryPath, string titlePath, bool isSeries, IReadOnlyList<string> indexedStreams)
     {
-        if (!Path.IsPathFullyQualified(persistentRoot) || !Path.IsPathFullyQualified(titlePath) ||
+        if (!Path.IsPathFullyQualified(libraryPath) || !Path.IsPathFullyQualified(titlePath) ||
             indexedStreams.Count == 0)
         {
             return [];
         }
 
-        string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(persistentRoot));
+        string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(libraryPath));
         string title = Path.TrimEndingDirectorySeparator(Path.GetFullPath(titlePath));
         string? category = Path.GetDirectoryName(title);
         var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
         var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
-        if (category == null || !string.Equals(Path.GetDirectoryName(category), root, comparison) ||
-            !(isSeries ? Path.GetFileName(category) is "tv" or "anime" : Path.GetFileName(category) == "movies") ||
+        if (category == null || !string.Equals(category, root, comparison) ||
             !Directory.Exists(title))
         {
             return [];
@@ -117,8 +120,12 @@ public static class WatchedItemCleanup
 
     public static void DeleteOwnedFiles(
         string persistentRoot, string titlePath, bool isSeries, IReadOnlyList<string> indexedStreams)
+        => DeleteOwnedFilesInLibrary(Path.Combine(persistentRoot, isSeries ? "tv" : "movies"), titlePath, isSeries, indexedStreams);
+
+    public static void DeleteOwnedFilesInLibrary(
+        string libraryPath, string titlePath, bool isSeries, IReadOnlyList<string> indexedStreams)
     {
-        var files = GetOwnedFiles(persistentRoot, titlePath, isSeries, indexedStreams);
+        var files = GetOwnedFilesInLibrary(libraryPath, titlePath, isSeries, indexedStreams);
         if (files.Count == 0)
         {
             throw new InvalidOperationException("The title no longer consists solely of indexed Mediarow streams; cleanup was refused.");

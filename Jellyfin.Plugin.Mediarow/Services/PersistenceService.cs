@@ -88,7 +88,7 @@ public class PersistenceService
 
         var folderName = $"{title} ({year}) {providerId}";
 
-        var folderPath = Path.Combine(Config.PersistentLibraryPath, "movies", folderName);
+        var folderPath = Path.Combine(Config.GetPersistencePath("movies"), folderName);
         var filePath = GetMovieFilePath(movie);
 
         // Create folder
@@ -164,7 +164,7 @@ public class PersistenceService
 
         var subFolder = isAnime ? "anime" : "tv";
         var folderName = $"{title} ({year}) {providerId}";
-        var seriesPath = Path.Combine(Config.PersistentLibraryPath, subFolder, folderName);
+        var seriesPath = Path.Combine(Config.GetPersistencePath(subFolder), folderName);
 
         // Create series folder
         Directory.CreateDirectory(seriesPath);
@@ -599,7 +599,8 @@ public class PersistenceService
 
     private void ValidatePersistence(BaseItemDto item)
     {
-        if (!Config.EnablePersistence || !Path.IsPathFullyQualified(Config.PersistentLibraryPath))
+        string category = item.Type == BaseItemKind.Movie ? "movies" : MediarowService.IsAnime(item) ? "anime" : "tv";
+        if (!Config.EnablePersistence || !Path.IsPathFullyQualified(Config.GetPersistencePath(category)))
         {
             throw new InvalidOperationException("Persistence requires an enabled, absolute library folder.");
         }
@@ -728,7 +729,8 @@ public class PersistenceService
             }
         }
 
-        if (Path.IsPathFullyQualified(Config.PersistentLibraryPath))
+        string category = item.Type == BaseItemKind.Movie ? "movies" : MediarowService.IsAnime(item) ? "anime" : "tv";
+        if (Path.IsPathFullyQualified(Config.GetPersistencePath(category)))
         {
             var path = item.Type == BaseItemKind.Series ? GetSeriesFolderPath(item) : GetMovieFilePath(item);
             var byPath = _libraryManager.FindByPath(path, item.Type == BaseItemKind.Series);
@@ -741,7 +743,7 @@ public class PersistenceService
     {
         var year = movie.ProductionYear?.ToString() ?? "Unknown";
         var title = SanitizeFileName(movie.Name ?? "Unknown");
-        return Path.Combine(Config.PersistentLibraryPath, "movies", $"{title} ({year}) {GetProviderIdTag(movie)}", $"{title} ({year}).strm");
+        return Path.Combine(Config.GetPersistencePath("movies"), $"{title} ({year}) {GetProviderIdTag(movie)}", $"{title} ({year}).strm");
     }
 
     public async Task ApplyCatalogMetadataAsync(BaseItem target, BaseItemDto source, CancellationToken cancellationToken)
@@ -870,7 +872,7 @@ public class PersistenceService
 
         var subFolder = isAnime ? "anime" : "tv";
         var folderName = $"{title} ({year}) {providerId}";
-        return Path.Combine(Config.PersistentLibraryPath, subFolder, folderName);
+        return Path.Combine(Config.GetPersistencePath(subFolder), folderName);
     }
 
     /// <summary>

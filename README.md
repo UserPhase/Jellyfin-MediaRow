@@ -240,9 +240,9 @@ https://your-aiometadata-instance.com/xxxxx
 |---------|-------------|
 | `AIOStreamsUrl` | Full AIOStreams addon URL including encrypted config (e.g., `https://aiostreams.elfhosted.com/E2_xxxxx`) |
 
-AIOStreams playback uses Jellyfin's native media-source and player pipeline, not a raw browser redirect. Enable persistence and automatic scans, configure an absolute writable persistent folder, then add its `movies` subfolder as a Movies library and `tv`/`anime` subfolders as Shows libraries.
+AIOStreams playback uses Jellyfin's native media-source and player pipeline, not a raw browser redirect. Enable persistence and automatic scans, set the **Movies path**, **Series path** and **Anime path**, then add those exact folders as Movies/Shows libraries. Mediarow does not append category subfolders to these settings.
 
-The virtual Popular/genre libraries do not satisfy this requirement: add the filesystem folders under **Dashboard > Libraries**. The path must be visible and writable inside the Jellyfin server (inside the container if using Docker), not merely on the client computer. For example, a persistent root `/mediarow` needs real library locations `/mediarow/movies` and `/mediarow/tv` (plus `/mediarow/anime` if enabled).
+The virtual Popular/genre libraries do not satisfy this requirement: add the filesystem folders under **Dashboard > Libraries**. Each path must be visible and writable inside the Jellyfin server (inside the container if using Docker), not merely on the client computer. For example, Movies path `/media/films` and Series path `/media/shows` need real library locations `/media/films` and `/media/shows`.
 
 If every poster reports that it could not be opened, version 2.0.3 displays the server's specific error instead of replacing it with a generic persistence warning. Check that error before changing addon settings: configuration validation can fail before the addon is queried. Do not share addon URLs, API keys or access tokens when reporting an error.
 
@@ -353,7 +353,10 @@ Enable persistence to save virtual items as real Jellyfin library items with ful
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `EnablePersistence` | false | Enable persistent library items (.strm files) |
-| `PersistentLibraryPath` | /mediarow | Root folder for persistent items (add as a Jellyfin library) |
+| `MoviesLibraryPath` | Legacy root + movies | Exact destination for generated movies; add as a Movies library |
+| `SeriesLibraryPath` | Legacy root + tv | Exact destination for generated series; add as a Shows library |
+| `AnimeLibraryPath` | Legacy root + anime | Exact destination for generated anime series; add as a Shows library if enabled |
+| `PersistentLibraryPath` | /mediarow | Legacy fallback retained for older configurations; no longer edited in the UI |
 | `TriggerLibraryScan` | true | Automatically scan library after creating new items |
 | `CreateUnreleasedMedia` | false | Create media for unreleased content |
 | `CheckForUpdatesOnView` | true | Check for new episodes when viewing persisted series |
@@ -363,10 +366,12 @@ Enable persistence to save virtual items as real Jellyfin library items with ful
 **Setting Up Persistence:**
 
 1. Enable `EnablePersistence` in plugin settings
-2. Set `PersistentLibraryPath` to an absolute writable folder (e.g., `/media/mediarow` or `D:\Media\Mediarow`)
-3. Add its `movies` subfolder as Movies and its `tv`/`anime` subfolders as Shows libraries; keep automatic library scanning enabled
+2. Set **Movies path**, **Series path** and **Anime path** to exact absolute writable server folders (e.g., `/media/films` and `/media/shows`, or `D:\Media\Movies` and `D:\Media\Series`)
+3. Add the exact Movies path as a Movies library and the Series/Anime paths as Shows libraries; keep automatic library scanning enabled
 4. When you click on a virtual item, it creates a .strm file in this folder
 5. Library scan adds it as a real item with full tracking
+
+Existing root-based settings retain their original destinations: the new fields initially display the legacy root plus `movies`, `tv` and `anime`. Saving stores those explicit paths. Changing a path does not move existing items, and cleanup only considers items in the currently configured folders. The plugin does not automatically register Jellyfin libraries.
 
 ### Optional watched-item cleanup
 
@@ -376,7 +381,7 @@ The **Mediarow: Clean Up Watched Items** scheduled task runs hourly, or can be r
 
 Series must have a confirmed **Ended** status, every imported episode (including specials) watched, and no future or unknown episode air dates. Continuing/unknown-status series are never purged. If the metadata provider cannot confirm that a series has ended, it stays in the library.
 
-Cleanup is restricted to the configured persistent root's `movies`, `tv` and `anime` title folders. Every STRM must contain a Mediarow marker (including the legacy marker) and match an indexed library item. Mixed folders with real media, unindexed streams, or symlinks/junctions are refused. Only generated STRM files, their companion NFOs and series/season NFOs are removed; artwork, subtitles and other NFOs are preserved. Empty title/season directories are removed without deleting category or library roots.
+Cleanup is restricted to immediate title folders under the configured Movies, Series and Anime paths. Every STRM must contain a Mediarow marker (including the legacy marker) and match an indexed library item. Mixed folders with real media, unindexed streams, or symlinks/junctions are refused. Only generated STRM files, their companion NFOs and series/season NFOs are removed; artwork, subtitles and other NFOs are preserved. Empty title/season directories are removed without deleting library roots.
 
 The shared library entry is removed too, so a repeat viewing requires opening the virtual catalog title again to reimport it. This is not a watch-history backup feature; use Jellyfin's normal user-data backup or external watch tracking if retaining history is essential.
 

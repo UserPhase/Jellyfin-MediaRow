@@ -388,6 +388,26 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public string PersistentLibraryPath { get; set; } = "/mediarow";
 
+    public string MoviesLibraryPath { get; set; } = string.Empty;
+
+    public string SeriesLibraryPath { get; set; } = string.Empty;
+
+    public string AnimeLibraryPath { get; set; } = string.Empty;
+
+    public string GetPersistencePath(string category)
+    {
+        string configured = category switch
+        {
+            "movies" => MoviesLibraryPath,
+            "tv" => SeriesLibraryPath,
+            "anime" => AnimeLibraryPath,
+            _ => throw new ArgumentOutOfRangeException(nameof(category))
+        };
+        return string.IsNullOrWhiteSpace(configured)
+            ? Path.Combine(PersistentLibraryPath, category)
+            : configured.Trim();
+    }
+
     /// <summary>
     /// Gets or sets whether to trigger a library scan after creating new items.
     /// When enabled, Jellyfin will automatically scan for new content.

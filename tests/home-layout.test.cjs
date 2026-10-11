@@ -101,6 +101,32 @@ test('watched cleanup defaults off and movie/series switches save independently'
     assert.equal(reloaded.get('chkCleanupCompletedSeries').checked, true);
 });
 
+test('explicit library paths migrate legacy roots and save exact destinations', async () => {
+    const ui = await editor({ PersistentLibraryPath: 'D:\\Media\\Mediarow' });
+    assert.equal(ui.get('txtMoviesLibraryPath').value, 'D:\\Media\\Mediarow\\movies');
+    assert.equal(ui.get('txtSeriesLibraryPath').value, 'D:\\Media\\Mediarow\\tv');
+    assert.equal(ui.get('txtAnimeLibraryPath').value, 'D:\\Media\\Mediarow\\anime');
+    ui.get('txtMoviesLibraryPath').value = '/data/film';
+    ui.get('txtSeriesLibraryPath').value = '/data/shows';
+    ui.get('txtAnimeLibraryPath').value = '/data/anime';
+    await ui.get('txtMoviesLibraryPath').emit('input');
+    assert.equal(ui.get('moviesPath').textContent, '/data/film');
+    assert.equal(ui.get('showsPath').textContent, '/data/shows');
+    const saved = await ui.save();
+    assert.equal(saved.MoviesLibraryPath, '/data/film');
+    assert.equal(saved.SeriesLibraryPath, '/data/shows');
+    assert.equal(saved.AnimeLibraryPath, '/data/anime');
+    assert.equal(saved.PersistentLibraryPath, 'D:\\Media\\Mediarow');
+    const reloaded = await editor(saved);
+    assert.equal(reloaded.get('txtMoviesLibraryPath').value, '/data/film');
+});
+
+test('enabled persistence refuses relative paths with an actionable error', async () => {
+    const ui = await editor({ EnablePersistence: true });
+    ui.get('txtMoviesLibraryPath').value = 'relative-movies';
+    await ui.get('mediarowForm').emit('submit');
+    assert.match(ui.alerts.at(-1), /Movies path must be an absolute/);
+});
 test('embedded clients without replaceChildren load genres and Stremio settings', async () => {
     assert.equal(typeof Element.prototype.replaceChildren, 'undefined');
     const ui = await editor({
