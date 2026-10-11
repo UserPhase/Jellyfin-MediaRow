@@ -63,8 +63,8 @@ jobs:
           EOF
 
           # Create ZIP
-          cd artifacts
-          zip -r mediarow-${VERSION}.zip Mediarow/
+          cd artifacts/Mediarow
+          zip ../mediarow-${VERSION}.zip Jellyfin.Plugin.Mediarow.dll meta.json
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

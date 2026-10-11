@@ -46,11 +46,15 @@ Mediarow is a fork of [pythcon/jellyfin-dynamic-library](https://github.com/pyth
 1. In Jellyfin, go to **Dashboard > Plugins > Repositories**
 2. Click **Add** and enter:
    - **Repository Name:** Jellyfin Mediarow
-   - **Repository URL:** `https://userphase.github.io/jellyfin-mediarow/manifest.json`
+   - **Repository URL:** `https://raw.githubusercontent.com/UserPhase/Jellyfin-MediaRow/gh-pages/manifest.json`
 3. Click **Save**
 4. Go to the **Catalog** tab and find "Jellyfin Mediarow"
 5. Click **Install**
 6. Restart Jellyfin
+
+The repository URL becomes available after the first version-tagged release finishes building. A successful build on `main` only creates a workflow artifact; it does not publish a release or a manifest. See [Release Process](#release-process) if you maintain the repository.
+
+If the plugin does not appear, open the repository URL in a browser: it must return JSON, not a GitHub page or a 404. Also check your server version: this release targets Jellyfin 12.0 and will be hidden on Jellyfin 10.x or 11.x. GitHub Pages is not required for the raw manifest URL above.
 
 ### Manual Installation
 
@@ -451,7 +455,9 @@ To try it in Jellyfin, copy `Jellyfin.Plugin.Mediarow/bin/Release/net10.0/Jellyf
    - Create a GitHub Release with `mediarow-X.Y.Z.zip`
    - Create or update `manifest.json` on the `gh-pages` branch
 
-The workflow uses the repository it runs in, so a fork publishes its own release links. Enable GitHub Pages for the `gh-pages` branch, then add `https://<owner>.github.io/<repository>/manifest.json` under **Dashboard → Plugins → Repositories** in Jellyfin.
+The workflow uses the repository it runs in, so a fork publishes its own release links. A push to `main` alone does not publish the plugin repository: a version tag such as `v2.0.0` must be pushed. Wait for both the `build` and `update-manifest` jobs to succeed, then verify the release ZIP is attached and `https://raw.githubusercontent.com/<owner>/<repository>/gh-pages/manifest.json` returns JSON. Add that raw URL under **Dashboard → Plugins → Repositories** in Jellyfin; no GitHub Pages setup is necessary.
+
+If you prefer a Pages URL, enable GitHub Pages for the `gh-pages` branch at `/` in repository settings. Use the exact repository-name casing in `https://<owner>.github.io/<repository>/manifest.json`.
 
 ## License
 
