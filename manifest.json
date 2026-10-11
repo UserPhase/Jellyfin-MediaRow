@@ -9,6 +9,14 @@
     "imageUrl": "https://UserPhase.github.io/Jellyfin-MediaRow/Mediarow.png",
     "versions": [
       {
+        "version": "2.3.2.0",
+        "changelog": "See GitHub releases for changelog",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/UserPhase/Jellyfin-MediaRow/releases/download/v2.3.2/mediarow-2.3.2.zip",
+        "checksum": "ecf82d35a3888191a50968b96f0a460d",
+        "timestamp": "2026-10-11T17:50:29Z"
+      },
+      {
         "version": "2.3.1.0",
         "changelog": "See GitHub releases for changelog",
         "targetAbi": "12.0.0.0",
