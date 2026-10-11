@@ -1,6 +1,6 @@
 name: "Jellyfin Mediarow"
 guid: "68cff731-4588-4ab3-aa0d-9ca73648679a"
-version: "2.0.1"
+version: "2.0.2"
 targetAbi: "12.0.0.0"
 framework: "net10.0"
 owner: "UserPhase"
@@ -14,6 +14,11 @@ category: "Metadata"
 artifacts:
   - "Jellyfin.Plugin.Mediarow.dll"
 changelog: |-
+  ## 2.0.2
+  - Fix configuration loading in embedded browsers without replaceChildren
+  - Fix Home script and stylesheet URLs when Jellyfin uses a Base URL
+  - Clarify client-specific library fallback and missing Home row troubleshooting
+
   ## 2.0.1
   - Fix first-time plugin repository manifest publication
   - Package the plugin DLL and metadata at the ZIP root

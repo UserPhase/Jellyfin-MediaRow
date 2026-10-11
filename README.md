@@ -167,7 +167,7 @@ Jellyfin clients fall into two groups, and Mediarow serves both:
 | Client | What you get |
 |---|---|
 | Jellyfin Web (any browser), Android and iOS apps, Jellyfin Media Player / Desktop, Xbox | The full Netflix-style Home: filter tabs, looping rows, drag and touch scrolling, and remote/arrow-key navigation |
-| Android TV, Tizen (Samsung), webOS (LG)\*, Swiftfin (iOS/tvOS), Findroid, Kodi (Jellyfin add-on) | Every row also appears as an app library (for example *Popular Movies* or *Drama Movies*), so the client's own "Latest" Home rows and library browsing show the catalog |
+| Android TV, Tizen (Samsung), webOS (LG)\*, Swiftfin (iOS/tvOS), Findroid, Kodi (Jellyfin add-on) | Catalogs are exposed as app libraries (for example *Popular Movies* or *Drama Movies*). Home rows depend on the client's support and settings for "Latest" media; otherwise browse the libraries. |
 
 \* Tizen and some webOS builds ship their own copy of Jellyfin Web, so the injected Home script can't run there. They use the app libraries instead.
 
@@ -177,6 +177,19 @@ How it works:
 - **App libraries (native clients).** With **Show rows in TV and native apps** enabled (the default), Mediarow adds one virtual library per configured row to `/UserViews`. Each library supports the standard Latest, Items (sorting, filtering, paging) and image endpoints. Opening a title imports it like a click on the web Home, so it plays with native Jellyfin playback. Nothing is added to your real libraries until a title is opened.
 - The web client already shows the injected rows, so it hides these libraries by default (it is recognised by a cookie set with the injected page). Enable **Also list these libraries in the web client** if you want them there too.
 - Playback from any client requires AIOStreams with persistence enabled. The first time a title is opened it can take a few seconds while it is imported. After that it opens instantly.
+
+### Libraries visible but no Home rows
+
+Version 2.0.2 also fixes configuration loading in embedded browsers without `replaceChildren()`: the Home genre checkboxes and Stremio Addon URL can otherwise remain unavailable. Until updated, configure the plugin through your server's browser dashboard; the settings apply to all clients.
+
+The Popular/genre library tiles are the native-client fallback, not the custom Home rows. Mediarow cannot force a native or bundled client to render a custom Home layout. Enable that client's Latest media/Home sections if available; some clients will only show the libraries. Real-device support is not yet verified for every client listed above.
+
+For the full custom rows, open the web interface served by your Jellyfin server (not a separately hosted or bundled web client):
+
+1. Restart Jellyfin after installing or updating the plugin, then hard-refresh the browser or clear the cached Jellyfin site data.
+2. In Mediarow settings, enable **Virtual Home rows**, configure a catalog provider, and leave **Also list these libraries in the web client** off to avoid duplicate library tiles.
+3. View the Home page's HTML source and look for `mediarow-home.js`. If it is missing, the page is not receiving the injected assets. If it is present, check the browser Network/Console for failed script, stylesheet or `Mediarow/Home/Sections` requests.
+4. If using a Jellyfin Base URL such as `/jellyfin`, the script and stylesheet URLs must include that prefix. Version 2.0.2 fixes asset injection for these installations.
 
 ### General Settings
 

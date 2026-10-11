@@ -767,7 +767,9 @@
         }
 
         function renderHomeSectionChoices() {
-          homeSectionChoices.replaceChildren();
+          while (homeSectionChoices.firstChild) {
+            homeSectionChoices.removeChild(homeSectionChoices.firstChild);
+          }
           const selectedOptions = homeRowOrder.map(function (id) {
             return homeSectionOptions.find(function (option) { return option.id === id; });
           });
@@ -1147,6 +1149,7 @@
             updateLibraryPaths();
           } catch (err) {
             console.error('Mediarow: Failed to load configuration', err);
+            Dashboard.alert('Mediarow could not load its configuration. Please retry in your server browser dashboard and check the console for details.');
           } finally {
             Dashboard.hideLoadingMsg();
             isLoading = false;

@@ -21,7 +21,8 @@ class Element {
         this.classList = { add() {}, remove() {} };
     }
     appendChild(child) { this.children.push(child); }
-    replaceChildren() { this.children = []; }
+    get firstChild() { return this.children[0] || null; }
+    removeChild(child) { this.children.splice(this.children.indexOf(child), 1); }
     setAttribute(key, value) { this.attributes[key] = value; }
     getAttribute(key) { return this.attributes[key]; }
     addEventListener(name, handler) { this.events[name] = handler; }
@@ -85,6 +86,23 @@ test('defaults select movies and series, with anime opt-in', async () => {
     assert.equal(ui.get('chkHomeAnime').checked, false);
     const saved = await ui.save();
     assert.deepEqual(saved.HomeRowContentCategories, ['Movies', 'Series']);
+});
+
+test('embedded clients without replaceChildren load genres and Stremio settings', async () => {
+    assert.equal(typeof Element.prototype.replaceChildren, 'undefined');
+    const ui = await editor({
+        CatalogProvider: 'StremioAddon',
+        StremioCatalogUrl: 'https://v3-cinemeta.strem.io',
+        HomeRowGenres: ['Action', 'Drama']
+    });
+    assert.deepEqual(ui.alerts, []);
+    assert.ok(ui.row('Mediarow_Action'));
+    assert.ok(ui.row('Mediarow_Drama'));
+    assert.equal(ui.get('txtStremioCatalogUrl').value, 'https://v3-cinemeta.strem.io');
+    assert.equal(ui.get('stremioCatalogSettings').style.display, 'block');
+    await ui.get('mediarowConfigPage').emit('viewshow');
+    assert.equal(ui.get('homeSectionChoices').children.filter(row =>
+        row.dataset.sectionId === 'Mediarow_Action').length, 1);
 });
 
 test('dragging changes visible order and persisted order, and reload preserves it', async () => {

@@ -1,5 +1,6 @@
 using System.Text;
 using System.IO.Compression;
+using System.Net;
 using Jellyfin.Plugin.Mediarow.Filters;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -25,6 +26,7 @@ public sealed class MediarowWebIntegrationStartupFilter : IStartupFilter
                 }
 
                 Stream originalBody = context.Response.Body;
+                string webBasePath = GetWebBasePath(context.Request);
                 await using var buffer = new MemoryStream();
                 context.Response.Body = buffer;
                 try
@@ -32,7 +34,7 @@ public sealed class MediarowWebIntegrationStartupFilter : IStartupFilter
                     await nextMiddleware();
                     buffer.Position = 0;
                     string html = await ReadResponseTextAsync(buffer, context.Response.Headers.ContentEncoding);
-                    string updatedHtml = InjectAssets(html);
+                    string updatedHtml = InjectAssets(html, webBasePath);
                     context.Response.Body = originalBody;
                     byte[] responseBytes = EncodeResponseText(updatedHtml, context.Response.Headers.ContentEncoding);
                     context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
@@ -67,11 +69,26 @@ public sealed class MediarowWebIntegrationStartupFilter : IStartupFilter
     {
         return request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase) &&
             (request.Path == "/" ||
-             request.Path == "/web/" ||
+             request.Path.Value?.EndsWith("/web/", StringComparison.OrdinalIgnoreCase) == true ||
              request.Path.Value?.EndsWith("/index.html", StringComparison.OrdinalIgnoreCase) == true);
     }
 
-    private static string InjectAssets(string html)
+    private static string GetWebBasePath(HttpRequest request)
+    {
+        // Capture the full path before Jellyfin's BaseUrl mapping temporarily changes PathBase.
+        string path = request.PathBase.Add(request.Path).ToUriComponent();
+        foreach (string suffix in new[] { "/web/index.html", "/web/", "/index.html" })
+        {
+            if (path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                return path[..^suffix.Length];
+            }
+        }
+
+        return path.TrimEnd('/');
+    }
+
+    private static string InjectAssets(string html, string webBasePath)
     {
         const string marker = "</head>";
         if (!html.Contains(marker, StringComparison.OrdinalIgnoreCase) ||
@@ -81,8 +98,9 @@ public sealed class MediarowWebIntegrationStartupFilter : IStartupFilter
         }
 
         string cacheKey = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
-        string assets = $"<link rel=\"stylesheet\" href=\"/Mediarow/Home/mediarow-home.css?v={cacheKey}\" />" +
-            $"<script defer src=\"/Mediarow/Home/mediarow-home.js?v={cacheKey}\"></script>";
+        string assetPath = WebUtility.HtmlEncode(webBasePath + "/Mediarow/Home/");
+        string assets = $"<link rel=\"stylesheet\" href=\"{assetPath}mediarow-home.css?v={cacheKey}\" />" +
+            $"<script defer src=\"{assetPath}mediarow-home.js?v={cacheKey}\"></script>";
         int index = html.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
         return html.Insert(index, assets);
     }
