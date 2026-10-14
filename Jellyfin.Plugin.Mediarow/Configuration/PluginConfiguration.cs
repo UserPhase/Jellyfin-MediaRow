@@ -195,6 +195,34 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool EnableHlsProbing { get; set; } = false;
 
     /// <summary>
+    /// Gets or sets whether AIOStreams results in the title's original language are moved to the top
+    /// and the original-language audio track is selected by default.
+    /// </summary>
+    public bool PreferOriginalLanguageStreams { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets per-user audio/subtitle language preferences, applied to every video the user plays.
+    /// </summary>
+    public List<UserLanguagePreference> UserLanguagePreferences { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets whether Mediarow sends a track-switch command after playback starts when a client
+    /// ignored the preferred tracks chosen by the server.
+    /// </summary>
+    public bool CorrectTracksAfterPlaybackStart { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets whether episodes without intro/credits markers get them from AniSkip, TheIntroDB and IntroDB,
+    /// so clients show "Skip Intro" and the next-episode prompt when the credits start.
+    /// </summary>
+    public bool EnableOnlineSkipSegments { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets whether Jellyfin Web shows the skip and next-episode buttons in a Netflix-like style.
+    /// </summary>
+    public bool NetflixStylePlayerButtons { get; set; } = true;
+
+    /// <summary>
     /// Gets or sets the URL template for movie streams in Direct mode.
     /// Placeholders: {id} (preferred ID), {imdb}, {tmdb}, {title}
     /// </summary>

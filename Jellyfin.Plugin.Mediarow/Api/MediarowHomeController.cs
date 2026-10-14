@@ -41,7 +41,25 @@ public sealed class MediarowHomeController : ControllerBase
     [HttpGet("mediarow-home.css")]
     public IActionResult GetHomeStyles()
     {
-        return GetEmbeddedAsset("mediarow-home.css", "text/css");
+        string css = ReadEmbeddedText("mediarow-home.css") ?? string.Empty;
+        if (MediarowPlugin.Instance?.Configuration.NetflixStylePlayerButtons ?? true)
+        {
+            css += "\n" + ReadEmbeddedText("mediarow-player.css");
+        }
+
+        return Content(css, "text/css");
+    }
+
+    private static string? ReadEmbeddedText(string assetName)
+    {
+        using Stream? stream = typeof(MediarowHomeController).Assembly.GetManifestResourceStream($"Jellyfin.Plugin.Mediarow.Web.{assetName}");
+        if (stream == null)
+        {
+            return null;
+        }
+
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
     }
 
     [HttpGet("Sections")]

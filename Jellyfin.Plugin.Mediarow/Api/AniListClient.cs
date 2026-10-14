@@ -71,6 +71,22 @@ public class AniListClient
         }
     }
 
+    /// <summary>Gets the MyAnimeList ID linked to an AniList anime.</summary>
+    public virtual async Task<int?> GetMalIdAsync(int anilistId, CancellationToken cancellationToken = default)
+    {
+        const string query = "query ($id: Int) { Media(id: $id, type: ANIME) { id idMal } }";
+        try
+        {
+            var response = await ExecuteQueryAsync<AniListMediaResponse>(query, new { id = anilistId }, cancellationToken);
+            return response?.Data?.Media?.IdMal;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug("[Mediarow] AniList: MAL ID lookup failed for {Id} ({ErrorType})", anilistId, ex.GetType().Name);
+            return null;
+        }
+    }
+
     /// <summary>
     /// Search AniList for an anime by title and year, returning the best match.
     /// Returns multiple results and picks the best match based on year.

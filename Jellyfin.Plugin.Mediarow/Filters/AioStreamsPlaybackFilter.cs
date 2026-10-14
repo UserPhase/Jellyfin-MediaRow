@@ -69,6 +69,7 @@ public sealed class AioStreamsPlaybackFilter(
                 }
             }
 
+            context.HttpContext.Items[LanguagePreferenceFilter.CandidatesKey] = candidates;
             var executed = await next();
             if (executed.Exception is HttpRequestException or InvalidOperationException or ArgumentException or OperationCanceledException or FfmpegException)
             {

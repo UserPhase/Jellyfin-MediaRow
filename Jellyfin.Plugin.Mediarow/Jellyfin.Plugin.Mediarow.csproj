@@ -21,5 +21,6 @@
     <EmbeddedResource Include="Configuration\configPage.html" />
     <EmbeddedResource Include="Web\mediarow-home.js" />
     <EmbeddedResource Include="Web\mediarow-home.css" />
+    <EmbeddedResource Include="Web\mediarow-player.css" />
   </ItemGroup>
 </Project>

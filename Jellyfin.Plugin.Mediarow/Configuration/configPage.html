@@ -16,6 +16,50 @@
       #mediarowConfigPage .homeSectionDragHandle { cursor: grab; padding: .25em; opacity: .65; }
       #mediarowConfigPage .homeSectionChoice button { padding: .5em; }
       #mediarowConfigPage .homeSectionChoice input[type="checkbox"] { accent-color: #00a4dc; width: 1.15em; height: 1.15em; margin-right: .65em; }
+      #mediarowConfigPage .content-primary { max-width: 60em; }
+      #mediarowForm .verticalSection { background: rgba(128, 128, 128, .07); border: 1px solid rgba(128, 128, 128, .2); border-radius: .6em; padding: 1.3em 1.5em .9em; margin: 0 0 1.1em; }
+      #mediarowForm > .verticalSection:first-child { background: none; border: 0; padding: 0 0 .4em; }
+      #mediarowForm .verticalSection .sectionTitle { margin: 0 0 .25em; }
+      #mediarowForm .sectionLead { margin: 0 0 1.1em; opacity: .7; font-size: .9em; line-height: 1.45; }
+      #mediarowConfigPage .cardGroupLabel { margin: 2.2em 0 .7em .2em; font-size: .72em; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: #00a4dc; }
+      #mediarowConfigPage .columnTitle { margin: 0 0 .9em; font-size: 1.05em; letter-spacing: .02em; }
+      #mediarowConfigPage .languageColumns { display: grid; grid-template-columns: repeat(auto-fit, minmax(17em, 1fr)); gap: 1em; margin: .2em 0 .4em; }
+      #mediarowConfigPage .languagePanel { padding: 1.1em 1.2em .6em; background: rgba(0, 0, 0, .18); border: 1px solid rgba(128, 128, 128, .22); border-top: 3px solid #00a4dc; border-radius: .5em; }
+      #mediarowConfigPage .panelStep { margin: 0 0 1.2em; }
+      #mediarowConfigPage .panelStepLabel { display: flex; align-items: center; gap: .55em; margin: 0 0 .5em; font-size: .9em; font-weight: 600; }
+      #mediarowConfigPage .panelStepLabel b { display: inline-grid; place-items: center; flex: none; width: 1.55em; height: 1.55em; font-size: .8em; border-radius: 50%; color: #00a4dc; border: 1.5px solid #00a4dc; }
+      #mediarowConfigPage .panelHint { margin: .45em 0 0; font-size: .82em; line-height: 1.4; opacity: .62; }
+      #mediarowConfigPage .panelOption { display: flex; align-items: center; gap: .5em; margin: .35em 0; font-size: .92em; cursor: pointer; }
+      #mediarowConfigPage .panelFootnote { margin: .2em 0 .3em; font-size: .8em; opacity: .5; }
+      #mediarowConfigPage .languageColumns .selectContainer { margin-bottom: .6em; }
+      #mediarowConfigPage .languageList { list-style: none; margin: .4em 0 .7em; padding: 0; counter-reset: priority; }
+      #mediarowConfigPage .languageList:empty::before { content: attr(data-empty); display: block; padding: 1em; text-align: center; font-style: italic; opacity: .6; font-size: .88em; border: 1px dashed rgba(128, 128, 128, .4); border-radius: .4em; }
+      #mediarowConfigPage .languageItem { display: flex; align-items: center; gap: .4em; padding: .35em .4em .35em .7em; margin: .3em 0; background: rgba(128, 128, 128, .08); border: 1px solid rgba(128, 128, 128, .25); border-left: 3px solid #00a4dc; border-radius: .4em; counter-increment: priority; }
+      #mediarowConfigPage .languageItem::before { content: counter(priority); min-width: 1.3em; font-weight: 700; color: #00a4dc; }
+      #mediarowConfigPage .languageItem span { flex: 1; }
+      #mediarowConfigPage .languageItem button { margin: 0; padding: .25em .6em; min-width: 0; font-size: .85em; }
+      #mediarowConfigPage .languageAdd { display: flex; gap: .5em; align-items: center; }
+      #mediarowConfigPage .languageAdd .selectContainer, #mediarowConfigPage .languageAdd select { flex: 1; margin: 0; }
+      #mediarowConfigPage .languageAdd button { margin: 0; white-space: nowrap; }
+      #mediarowConfigPage .languageUserSummary { display: grid; gap: .35em; margin: .8em 0 .4em; }
+      #mediarowConfigPage .languageUserRow { display: flex; gap: 1em; align-items: baseline; width: 100%; padding: .55em .8em; text-align: left; font: inherit; color: inherit; cursor: pointer; background: transparent; border: 1px solid rgba(128, 128, 128, .22); border-radius: .4em; }
+      #mediarowConfigPage .languageUserRow strong { min-width: 8em; }
+      #mediarowConfigPage .languageUserRow span { opacity: .6; font-size: .9em; }
+      #mediarowConfigPage .languageUserRow.isEnabled span { opacity: .9; }
+      #mediarowConfigPage .languageUserRow.isCurrent { border-color: #00a4dc; background: rgba(0, 164, 220, .1); }
+      #mediarowConfigPage .languageUserRow:hover { border-color: rgba(0, 164, 220, .6); }
+      #mediarowConfigPage #languageUserSettings.isInactive .verticalSection { opacity: .6; }
+      #mediarowConfigPage .seriesResults { display: flex; flex-wrap: wrap; gap: .4em; margin: 0 0 .8em; }
+      #mediarowConfigPage .seriesResult { padding: .4em .8em; font: inherit; font-size: .9em; color: inherit; cursor: pointer; background: rgba(0, 164, 220, .12); border: 1px solid rgba(0, 164, 220, .45); border-radius: 2em; }
+      #mediarowConfigPage .seriesResult:hover { background: rgba(0, 164, 220, .3); }
+      #mediarowConfigPage .seriesResultEmpty { opacity: .6; font-size: .9em; }
+      #mediarowConfigPage .seriesOverrideList { margin-bottom: .6em; }
+      #mediarowConfigPage .seriesOverrideList:empty::before { content: attr(data-empty); display: block; padding: 1em; text-align: center; font-style: italic; opacity: .6; font-size: .88em; border: 1px dashed rgba(128, 128, 128, .4); border-radius: .4em; }
+      #mediarowConfigPage .seriesOverride { display: grid; grid-template-columns: minmax(9em, 1.5fr) 1fr 1fr minmax(8em, 1fr) auto; gap: .5em; align-items: center; padding: .55em 0; border-bottom: 1px solid rgba(128, 128, 128, .2); }
+      #mediarowConfigPage .seriesOverride .seriesName { font-weight: 600; }
+      #mediarowConfigPage .seriesOverride button { margin: 0; padding: .3em .6em; min-width: 0; }
+      #mediarowConfigPage .learnedBadge { display: inline-block; margin-left: .5em; padding: .05em .55em; font-size: .72em; font-weight: 600; vertical-align: middle; color: #00a4dc; border: 1px solid rgba(0, 164, 220, .55); border-radius: 2em; }
+      @media (max-width: 50em) { #mediarowConfigPage .seriesOverride { grid-template-columns: 1fr 1fr; } }
     </style>
     <div data-role="content">
       <div class="content-primary">
@@ -32,6 +76,8 @@
           </div>
 
           <div class="verticalSection">
+            <h3 class="sectionTitle">General</h3>
+            <p class="sectionLead">Turn Mediarow on or off for the whole server.</p>
             <div class="checkboxContainer checkboxContainer-withDescription">
               <label>
                 <input is="emby-checkbox" type="checkbox" id="chkEnabled" />
@@ -41,8 +87,11 @@
             </div>
           </div>
 
+          <div class="cardGroupLabel">Catalog</div>
+
           <div class="verticalSection">
             <h3 class="sectionTitle">Catalog Provider</h3>
+            <p class="sectionLead">Where Mediarow finds movies and shows that are not in your library yet.</p>
 
             <div class="inputContainer">
               <label class="inputLabel inputLabelUnfocused" for="selCatalogProvider">Provider:</label>
@@ -59,10 +108,11 @@
 
           <div class="verticalSection" id="stremioCatalogSettings" style="display: none;">
             <h3 class="sectionTitle">Stremio Catalog Settings</h3>
+            <p class="sectionLead">The Stremio addon used for search, catalogs and item details.</p>
 
             <div class="inputContainer">
               <label class="inputLabel inputLabelUnfocused" for="txtStremioCatalogUrl">Addon URL:</label>
-              <input is="emby-input" type="text" id="txtStremioCatalogUrl" class="emby-input" placeholder="https://v3-cinemeta.strem.io" />
+              <input type="text" id="txtStremioCatalogUrl" class="emby-input" placeholder="https://v3-cinemeta.strem.io" />
               <div class="fieldDescription">
                 Base URL for the Stremio addon (without /manifest.json).<br>
                 Examples:
@@ -86,6 +136,7 @@
 
           <div class="verticalSection">
             <h3 class="sectionTitle">API Keys</h3>
+            <p class="sectionLead">Keys for TVDB and TMDB, used for search and metadata.</p>
 
             <div id="apiKeyInfo" style="background: #1a1a1a; border-left: 4px solid #00a4dc; padding: 1em; margin: 1em 0; display: none;">
               <p style="margin: 0; font-size: 0.95em;">
@@ -97,7 +148,7 @@
 
             <div class="inputContainer">
               <label class="inputLabel inputLabelUnfocused" for="txtTvdbApiKey">TVDB API Key:</label>
-              <input is="emby-input" type="password" id="txtTvdbApiKey" class="emby-input" />
+              <input type="password" id="txtTvdbApiKey" class="emby-input" />
               <div class="fieldDescription">
                 API key for TVDB (used for TV shows and anime).
                 Get one at <a href="https://thetvdb.com/api-information" target="_blank">thetvdb.com</a>.
@@ -106,7 +157,7 @@
 
             <div class="inputContainer">
               <label class="inputLabel inputLabelUnfocused" for="txtTmdbApiKey">TMDB API Key:</label>
-              <input is="emby-input" type="password" id="txtTmdbApiKey" class="emby-input" />
+              <input type="password" id="txtTmdbApiKey" class="emby-input" />
               <div class="fieldDescription">
                 API key for TMDB (used for movies).
                 Get one at <a href="https://www.themoviedb.org/settings/api" target="_blank">themoviedb.org</a>.
@@ -143,13 +194,13 @@
 
             <div class="inputContainer">
               <label class="inputLabel inputLabelUnfocused" for="txtMaxMovieResults">Max Movie Results:</label>
-              <input is="emby-input" type="number" id="txtMaxMovieResults" class="emby-input" min="1" max="100" />
+              <input type="number" id="txtMaxMovieResults" class="emby-input" min="1" max="100" />
               <div class="fieldDescription">Maximum number of movie results to return (1-100).</div>
             </div>
 
             <div class="inputContainer">
               <label class="inputLabel inputLabelUnfocused" for="txtMaxTvShowResults">Max TV Show Results:</label>
-              <input is="emby-input" type="number" id="txtMaxTvShowResults" class="emby-input" min="1" max="100" />
+              <input type="number" id="txtMaxTvShowResults" class="emby-input" min="1" max="100" />
               <div class="fieldDescription">Maximum number of TV show/anime results to return (1-100).</div>
             </div>
           </div>
@@ -200,8 +251,11 @@
             </div>
           </div>
 
+          <div class="cardGroupLabel">Streaming</div>
+
           <div class="verticalSection">
             <h3 class="sectionTitle">Stream Provider</h3>
+            <p class="sectionLead">How a title is turned into a playable stream.</p>
 
             <div class="inputContainer">
               <label class="inputLabel inputLabelUnfocused" for="selStreamProvider">Provider:</label>
@@ -222,10 +276,11 @@
 
           <div class="verticalSection" id="aiostreamsSettings" style="display: none;">
             <h3 class="sectionTitle">AIOStreams Settings</h3>
+            <p class="sectionLead">Your AIOStreams instance and how its results are picked.</p>
 
             <div class="inputContainer">
               <label class="inputLabel inputLabelUnfocused" for="txtAIOStreamsUrl">AIOStreams Addon URL:</label>
-              <input is="emby-input" type="text" id="txtAIOStreamsUrl" class="emby-input" placeholder="https://aiostreams.elfhosted.com/E2_xxxxx" />
+              <input type="text" id="txtAIOStreamsUrl" class="emby-input" placeholder="https://aiostreams.elfhosted.com/E2_xxxxx" />
               <div class="fieldDescription">
                 Your full AIOStreams addon URL including the encrypted configuration.<br>
                 Enable Persistence and automatic library scanning below. Set the Movies and Series paths, then add those exact folders as Jellyfin libraries. Selected titles are saved as small STRM/metadata files, not downloaded videos. Jellyfin probes the chosen stream for audio, subtitles, and transcoding.<br>
@@ -247,6 +302,18 @@
               </p>
             </div>
 
+            <div class="checkboxContainer checkboxContainer-withDescription">
+              <label>
+                <input is="emby-checkbox" type="checkbox" id="chkPreferOriginalLanguageStreams" />
+                <span>Prefer original language</span>
+              </label>
+              <div class="fieldDescription">
+                Moves AIOStreams results in the title's original language (for example English for Smallville) to the top,
+                so they play by default, and selects the original-language audio track in multi-audio releases.
+                Results tagged only with other languages (such as a Russian dub) move to the bottom. Unlabeled results keep their order.
+              </div>
+            </div>
+
             <div class="checkboxContainer checkboxContainer-withDescription" style="display: none;">
               <label>
                 <input is="emby-checkbox" type="checkbox" id="chkEnableHlsProbing" />
@@ -261,16 +328,17 @@
 
           <div class="verticalSection" id="embedarrSettings" style="display: none;">
             <h3 class="sectionTitle">Embedarr Settings</h3>
+            <p class="sectionLead">Your Embedarr instance for embedded streams.</p>
 
             <div class="inputContainer">
               <label class="inputLabel inputLabelUnfocused" for="txtEmbedarrUrl">Embedarr URL:</label>
-              <input is="emby-input" type="text" id="txtEmbedarrUrl" class="emby-input" placeholder="http://localhost:8080" />
+              <input type="text" id="txtEmbedarrUrl" class="emby-input" placeholder="http://localhost:8080" />
               <div class="fieldDescription">URL to your Embedarr instance for STRM file generation.</div>
             </div>
 
             <div class="inputContainer">
               <label class="inputLabel inputLabelUnfocused" for="txtEmbedarrApiKey">Embedarr API Key:</label>
-              <input is="emby-input" type="password" id="txtEmbedarrApiKey" class="emby-input" />
+              <input type="password" id="txtEmbedarrApiKey" class="emby-input" />
               <div class="fieldDescription">API key for Embedarr (if required).</div>
             </div>
 
@@ -304,19 +372,19 @@
 
             <div class="inputContainer">
               <label class="inputLabel inputLabelUnfocused" for="txtDirectMovieUrl">Movie URL Template:</label>
-              <input is="emby-input" type="text" id="txtDirectMovieUrl" class="emby-input" placeholder="https://example.com/movie/{imdb}.m3u8" />
+              <input type="text" id="txtDirectMovieUrl" class="emby-input" placeholder="https://example.com/movie/{imdb}.m3u8" />
               <div class="fieldDescription">Template for movie streams. Placeholders: {id}, {imdb}, {tmdb}, {title}</div>
             </div>
 
             <div class="inputContainer">
               <label class="inputLabel inputLabelUnfocused" for="txtDirectTvUrl">TV Show URL Template:</label>
-              <input is="emby-input" type="text" id="txtDirectTvUrl" class="emby-input" placeholder="https://example.com/tv/{imdb}/{season}/{episode}.m3u8" />
+              <input type="text" id="txtDirectTvUrl" class="emby-input" placeholder="https://example.com/tv/{imdb}/{season}/{episode}.m3u8" />
               <div class="fieldDescription">Template for TV episodes. Placeholders: {id}, {imdb}, {tvdb}, {season}, {episode}, {title}</div>
             </div>
 
             <div class="inputContainer">
               <label class="inputLabel inputLabelUnfocused" for="txtDirectAnimeUrl">Anime URL Template:</label>
-              <input is="emby-input" type="text" id="txtDirectAnimeUrl" class="emby-input" placeholder="https://example.com/anime/{anilist}/{absolute}/{audio}.m3u8" />
+              <input type="text" id="txtDirectAnimeUrl" class="emby-input" placeholder="https://example.com/anime/{anilist}/{absolute}/{audio}.m3u8" />
               <div class="fieldDescription">Template for anime episodes. Placeholders: {id}, {imdb}, {tvdb}, {anilist}, {season}, {episode}, {absolute}, {audio}, {title}</div>
             </div>
 
@@ -344,7 +412,7 @@
 
             <div class="inputContainer" id="animeAudioTracksContainer" style="display: none;">
               <label class="inputLabel inputLabelUnfocused" for="txtAnimeAudioTracks">Anime Audio Tracks:</label>
-              <input is="emby-input" type="text" id="txtAnimeAudioTracks" class="emby-input" placeholder="sub,dub" />
+              <input type="text" id="txtAnimeAudioTracks" class="emby-input" placeholder="sub,dub" />
               <div class="fieldDescription">
                 Comma-separated list of audio options. Each value replaces <code>{audio}</code> in the URL template.
                 Example: "sub,dub" creates two options that generate URLs ending in /sub.m3u8 and /dub.m3u8
@@ -352,8 +420,11 @@
             </div>
           </div>
 
+          <div class="cardGroupLabel">Metadata</div>
+
           <div class="verticalSection">
             <h3 class="sectionTitle">Language Settings</h3>
+            <p class="sectionLead">The language used for titles and descriptions from the catalog.</p>
 
             <div class="inputContainer">
               <label class="inputLabel inputLabelUnfocused" for="selLanguageMode">Language Mode:</label>
@@ -400,8 +471,163 @@
             </div>
           </div>
 
+          <div class="cardGroupLabel">Audio &amp; subtitle languages</div>
+
+          <div class="verticalSection" id="languageUserCard">
+            <h3 class="sectionTitle">User</h3>
+            <p class="sectionLead">
+              Select the user whose audio and subtitle preferences you want to configure. Every user has their own settings.
+              Tracks are chosen before playback starts (library videos and Mediarow streams alike), and a track picked by hand always wins.
+            </p>
+            <div class="selectContainer">
+              <label class="selectLabel" for="selLanguageUser">User</label>
+              <select is="emby-select" id="selLanguageUser" class="emby-select-withcolor emby-select"></select>
+            </div>
+            <div class="checkboxContainer checkboxContainer-withDescription">
+              <label>
+                <input is="emby-checkbox" type="checkbox" id="chkLanguageUserEnabled" />
+                <span>Enable language preferences for this user</span>
+              </label>
+              <div class="fieldDescription">Off: Jellyfin's own track choice (and the global "Prefer original language" option for AIOStreams).</div>
+            </div>
+            <div class="languageUserSummary" id="languageUserSummary" aria-label="Overview of all users"></div>
+          </div>
+
+          <div id="languageUserSettings">
+            <div class="verticalSection">
+              <h3 class="sectionTitle">Language Priorities</h3>
+              <p class="sectionLead">Choose what this user hears and reads. Picking a track by hand during playback always wins.</p>
+
+              <div class="languageColumns">
+                <div class="languagePanel">
+                  <h4 class="columnTitle">Audio</h4>
+                  <div class="panelStep">
+                    <label class="panelStepLabel" for="selAudioMode"><b>1</b> Which audio track?</label>
+                    <select is="emby-select" id="selAudioMode" class="emby-select-withcolor emby-select">
+                      <option value="original">The original language</option>
+                      <option value="specific">A specific language</option>
+                      <option value="default">Jellyfin default</option>
+                    </select>
+                    <div class="panelHint" id="audioModeDescription"></div>
+                  </div>
+                  <div class="panelStep" id="audioLanguageBlock">
+                    <div class="panelStepLabel"><b>2</b> <span id="audioListLabel">Languages</span></div>
+                    <ol class="languageList" id="audioLanguageList" data-empty="None yet. Add one below."></ol>
+                    <div class="languageAdd">
+                      <select is="emby-select" id="selAudioLanguageAdd" class="emby-select-withcolor emby-select" aria-label="Audio language to add"></select>
+                      <button is="emby-button" type="button" id="btnAddAudioLanguage" class="raised button-submit emby-button">+ Add</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="languagePanel">
+                  <h4 class="columnTitle">Subtitles</h4>
+                  <div class="panelStep">
+                    <label class="panelStepLabel" for="selSubtitleMode"><b>1</b> When to show subtitles?</label>
+                    <select is="emby-select" id="selSubtitleMode" class="emby-select-withcolor emby-select">
+                      <option value="WhenNeeded">When I don't understand the audio</option>
+                      <option value="Always">Always</option>
+                      <option value="ForcedOnly">Forced only (signs and foreign dialogue)</option>
+                      <option value="Off">Never</option>
+                      <option value="Default">Jellyfin default</option>
+                    </select>
+                    <div class="panelHint" id="subtitleModeDescription"></div>
+                  </div>
+                  <div class="panelStep" id="subtitleLanguageBlock">
+                    <div class="panelStepLabel"><b>2</b> Languages, in order</div>
+                    <ol class="languageList" id="subtitleLanguageList" data-empty="None yet. Add one below."></ol>
+                    <div class="languageAdd">
+                      <select is="emby-select" id="selSubtitleLanguageAdd" class="emby-select-withcolor emby-select" aria-label="Subtitle language to add"></select>
+                      <button is="emby-button" type="button" id="btnAddSubtitleLanguage" class="raised button-submit emby-button">+ Add</button>
+                    </div>
+                  </div>
+                  <div class="panelStep panelOptions" id="subtitleOptionsBlock">
+                    <div class="panelStepLabel"><b>3</b> Options</div>
+                    <label class="panelOption" id="preferNonForcedContainer">
+                      <input is="emby-checkbox" type="checkbox" id="chkLanguagePreferNonForced" />
+                      <span>Prefer full subtitles over forced ones</span>
+                    </label>
+                    <label class="panelOption" id="forcedWhenAudioMatchesContainer">
+                      <input is="emby-checkbox" type="checkbox" id="chkLanguageForcedWhenAudioMatches" />
+                      <span>If I understand the audio, still show forced subtitles</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <p class="panelFootnote">AIOStreams results are also sorted by these languages.</p>
+            </div>
+
+            <div class="verticalSection">
+              <h3 class="sectionTitle">Series Overrides</h3>
+              <p class="sectionLead">Override the settings above for specific series. Leave a field empty to keep this user's setting.</p>
+
+              <div class="checkboxContainer checkboxContainer-withDescription">
+                <label>
+                  <input is="emby-checkbox" type="checkbox" id="chkRememberSeriesChoices" />
+                  <span>Remember my track changes per series</span>
+                </label>
+                <div class="fieldDescription">
+                  When this user switches audio or subtitles during an episode, the choice is saved here for that series,
+                  so the next episodes start with the same tracks. Marked as <span class="learnedBadge">Remembered</span>.
+                </div>
+              </div>
+
+              <div class="inputContainer" style="margin-bottom: .4em;">
+                <input type="search" id="txtLanguageSeriesSearch" class="emby-input" placeholder="🔍 Search for a series to add..." aria-label="Search for a series to add" autocomplete="off" />
+              </div>
+              <div class="seriesResults" id="languageSeriesResults"></div>
+              <div class="seriesOverrideList" id="seriesOverrideList" data-empty="No series overrides. Use the search above to add one, or change tracks during an episode."></div>
+            </div>
+          </div>
+
+          <div class="verticalSection">
+            <h3 class="sectionTitle">Playback Correction</h3>
+            <p class="sectionLead">Applies to every user with language preferences.</p>
+            <div class="checkboxContainer checkboxContainer-withDescription">
+              <label>
+                <input is="emby-checkbox" type="checkbox" id="chkCorrectTracksAfterPlaybackStart" />
+                <span>Correct tracks after playback starts</span>
+              </label>
+              <div class="fieldDescription">
+                For apps that ignore the server's track choice: about 1.5 seconds after playback starts, Mediarow switches
+                to the preferred track, but only if a different one is playing.
+                Adapted from <a href="https://github.com/Hightmar/jellyfin-langage-failover" target="_blank" rel="noopener">Language Failover</a> by Hightmar (MIT); you don't need both.
+              </div>
+            </div>
+          </div>
+
+          <div class="cardGroupLabel">Library &amp; playback</div>
+
+          <div class="verticalSection">
+            <h3 class="sectionTitle">Skip Intro &amp; Next Episode</h3>
+            <p class="sectionLead">Netflix-style "Skip Intro", "Skip Recap" and a "Next Episode" prompt when the credits start. Works in Jellyfin Web and in apps that support media segments (Android TV, Swiftfin, Findroid and others).</p>
+            <div class="checkboxContainer checkboxContainer-withDescription">
+              <label>
+                <input is="emby-checkbox" type="checkbox" id="chkEnableOnlineSkipSegments" />
+                <span>Find intro and credits times online</span>
+              </label>
+              <div class="fieldDescription">
+                Looks up episodes in <a href="https://aniskip.com" target="_blank" rel="noopener">AniSkip</a> (anime),
+                <a href="https://theintrodb.org" target="_blank" rel="noopener">TheIntroDB</a> and
+                <a href="https://introdb.app" target="_blank" rel="noopener">IntroDB</a>; no API key needed. Applies to every
+                episode without markers of its own, so markers from a plugin such as Intro Skipper always take priority.
+                Times are community-submitted and can be a few seconds off for a different release.
+              </div>
+            </div>
+            <div class="checkboxContainer checkboxContainer-withDescription">
+              <label>
+                <input is="emby-checkbox" type="checkbox" id="chkNetflixStylePlayerButtons" />
+                <span>Netflix-style buttons in Jellyfin Web</span>
+              </label>
+              <div class="fieldDescription">
+                Restyles the skip button and the up-next card. When the credits start, the next episode plays after a 10-second countdown (the "Start Now" button fills up), like Netflix, instead of after the credits. Requires "Play next episode automatically" in the user's playback settings.
+                Each user can choose to skip automatically under Settings &rarr; Playback &rarr; Media segments. Reload the web page after changing this.
+              </div>
+            </div>
+          </div>
+
           <div class="verticalSection">
             <h3 class="sectionTitle">Subtitle Settings</h3>
+            <p class="sectionLead">Extra subtitles fetched for Mediarow streams.</p>
 
             <div class="checkboxContainer checkboxContainer-withDescription">
               <label>
@@ -416,7 +642,7 @@
             <div id="subtitleSettings" style="display: none;">
               <div class="inputContainer">
                 <label class="inputLabel inputLabelUnfocused" for="txtOpenSubtitlesApiKey">OpenSubtitles API Key:</label>
-                <input is="emby-input" type="password" id="txtOpenSubtitlesApiKey" class="emby-input" />
+                <input type="password" id="txtOpenSubtitlesApiKey" class="emby-input" />
                 <div class="fieldDescription">
                   API key from <a href="https://www.opensubtitles.com/consumers" target="_blank">opensubtitles.com</a>.
                   Required for subtitle fetching.
@@ -425,7 +651,7 @@
 
               <div class="inputContainer">
                 <label class="inputLabel inputLabelUnfocused" for="txtSubtitleLanguages">Preferred Languages:</label>
-                <input is="emby-input" type="text" id="txtSubtitleLanguages" class="emby-input" placeholder="en,es,fr" />
+                <input type="text" id="txtSubtitleLanguages" class="emby-input" placeholder="en,es,fr" />
                 <div class="fieldDescription">
                   Comma-separated ISO 639-1 language codes (e.g., en, es, fr, de, ja).
                   Subtitles will be fetched for each language if available.
@@ -434,7 +660,7 @@
 
               <div class="inputContainer">
                 <label class="inputLabel inputLabelUnfocused" for="txtMaxSubtitlesPerLanguage">Max Subtitles Per Language:</label>
-                <input is="emby-input" type="number" id="txtMaxSubtitlesPerLanguage" class="emby-input" min="1" value="1" />
+                <input type="number" id="txtMaxSubtitlesPerLanguage" class="emby-input" min="1" value="1" />
                 <div class="fieldDescription">
                   Maximum number of subtitle files to download for each language. Default: 1 (best match only).
                 </div>
@@ -442,7 +668,7 @@
 
               <div class="inputContainer">
                 <label class="inputLabel inputLabelUnfocused" for="txtSubtitleCachePath">Subtitle Cache Path:</label>
-                <input is="emby-input" type="text" id="txtSubtitleCachePath" class="emby-input" placeholder="/tmp/jellyfin-mediarow-subtitles" />
+                <input type="text" id="txtSubtitleCachePath" class="emby-input" placeholder="/tmp/jellyfin-mediarow-subtitles" />
                 <div class="fieldDescription">
                   Directory where downloaded subtitle files are cached.
                 </div>
@@ -480,19 +706,19 @@
             <div id="persistenceSettings" style="display: none;">
               <div class="inputContainer">
                 <label class="inputLabel inputLabelUnfocused" for="txtMoviesLibraryPath">Movies path:</label>
-                <input is="emby-input" type="text" id="txtMoviesLibraryPath" class="emby-input" placeholder="/mediarow/movies" />
+                <input type="text" id="txtMoviesLibraryPath" class="emby-input" placeholder="/mediarow/movies" />
                 <div class="fieldDescription">
                   Exact folder for generated movies. Add this same folder as a Movies library in Jellyfin.
                 </div>
               </div>
               <div class="inputContainer">
                 <label class="inputLabel inputLabelUnfocused" for="txtSeriesLibraryPath">Series path:</label>
-                <input is="emby-input" type="text" id="txtSeriesLibraryPath" class="emby-input" placeholder="/mediarow/tv" />
+                <input type="text" id="txtSeriesLibraryPath" class="emby-input" placeholder="/mediarow/tv" />
                 <div class="fieldDescription">Exact folder for generated series. Add this same folder as a Shows library.</div>
               </div>
               <div class="inputContainer">
                 <label class="inputLabel inputLabelUnfocused" for="txtAnimeLibraryPath">Anime path:</label>
-                <input is="emby-input" type="text" id="txtAnimeLibraryPath" class="emby-input" placeholder="/mediarow/anime" />
+                <input type="text" id="txtAnimeLibraryPath" class="emby-input" placeholder="/mediarow/anime" />
                 <div class="fieldDescription">Exact folder for anime series. Add this same folder as a Shows library if using anime.</div>
               </div>
 
@@ -546,6 +772,8 @@
               </div>
             </div>
           </div>
+
+          <div class="cardGroupLabel">Home</div>
 
           <div class="verticalSection">
             <h3 class="sectionTitle">Virtual Home Rows</h3>
@@ -607,7 +835,7 @@
 
             <div class="inputContainer">
               <label class="inputLabel inputLabelUnfocused" for="txtHomeRowItemCount">Items per row:</label>
-              <input is="emby-input" type="number" id="txtHomeRowItemCount" class="emby-input" min="1" max="100" />
+              <input type="number" id="txtHomeRowItemCount" class="emby-input" min="1" max="100" />
             </div>
 
             <div class="checkboxContainer checkboxContainer-withDescription">
@@ -620,12 +848,12 @@
 
             <div class="inputContainer">
               <label class="inputLabel inputLabelUnfocused" for="txtHomeRowShuffleRefreshMinutes">Shuffle refresh (minutes):</label>
-              <input is="emby-input" type="number" id="txtHomeRowShuffleRefreshMinutes" class="emby-input" min="1" max="1440" />
+              <input type="number" id="txtHomeRowShuffleRefreshMinutes" class="emby-input" min="1" max="1440" />
             </div>
 
             <div class="inputContainer">
               <label class="inputLabel inputLabelUnfocused" for="txtHomeRowMinimumRating">Minimum rating:</label>
-              <input is="emby-input" type="number" id="txtHomeRowMinimumRating" class="emby-input" min="0" max="10" step="0.1" />
+              <input type="number" id="txtHomeRowMinimumRating" class="emby-input" min="0" max="10" step="0.1" />
               <div class="fieldDescription">Set to 0 to disable the rating filter.</div>
             </div>
 
@@ -633,6 +861,7 @@
 
           <div class="verticalSection">
             <h3 class="sectionTitle">Watched item cleanup (optional)</h3>
+            <p class="sectionLead">Removes imported Mediarow items after they are watched.</p>
             <div class="checkboxContainer checkboxContainer-withDescription">
               <label>
                 <input is="emby-checkbox" type="checkbox" id="chkCleanupWatchedMovies" />
@@ -657,10 +886,11 @@
 
           <div class="verticalSection">
             <h3 class="sectionTitle">Cache Settings</h3>
+            <p class="sectionLead">How long catalog results are kept before they are fetched again.</p>
 
             <div class="inputContainer">
               <label class="inputLabel inputLabelUnfocused" for="txtCacheTtlMinutes">Cache TTL (minutes):</label>
-              <input is="emby-input" type="number" id="txtCacheTtlMinutes" class="emby-input" min="1" max="1440" />
+              <input type="number" id="txtCacheTtlMinutes" class="emby-input" min="1" max="1440" />
               <div class="fieldDescription">How long to cache search results (1-1440 minutes).</div>
             </div>
           </div>
@@ -706,6 +936,9 @@
         // Cache DOM elements - AIOStreams settings
         const txtAIOStreamsUrl = document.querySelector('#txtAIOStreamsUrl');
         const chkEnableHlsProbing = document.querySelector('#chkEnableHlsProbing');
+        const chkPreferOriginalLanguageStreams = document.querySelector('#chkPreferOriginalLanguageStreams');
+        const chkEnableOnlineSkipSegments = document.querySelector('#chkEnableOnlineSkipSegments');
+        const chkNetflixStylePlayerButtons = document.querySelector('#chkNetflixStylePlayerButtons');
         const aiostreamsSettings = document.querySelector('#aiostreamsSettings');
 
         // Cache DOM elements - subtitle settings
@@ -1135,6 +1368,9 @@
             // AIOStreams settings
             txtAIOStreamsUrl.value = config.AIOStreamsUrl || '';
             chkEnableHlsProbing.checked = config.EnableHlsProbing ?? false;
+            chkPreferOriginalLanguageStreams.checked = config.PreferOriginalLanguageStreams ?? true;
+            chkEnableOnlineSkipSegments.checked = config.EnableOnlineSkipSegments ?? true;
+            chkNetflixStylePlayerButtons.checked = config.NetflixStylePlayerButtons ?? true;
 
             // Subtitle settings
             chkEnableSubtitles.checked = config.EnableSubtitles ?? false;
@@ -1193,6 +1429,7 @@
             updateSubtitleSettingsVisibility();
             updatePersistenceSettingsVisibility();
             updateLibraryPaths();
+            await loadLanguagePreferences(config);
           } catch (err) {
             console.error('Mediarow: Failed to load configuration', err);
             Dashboard.alert('Mediarow could not load its configuration. Please retry in your server browser dashboard and check the console for details.');
@@ -1234,6 +1471,9 @@
             // AIOStreams settings
             config.AIOStreamsUrl = txtAIOStreamsUrl.value.trim();
             config.EnableHlsProbing = chkEnableHlsProbing.checked;
+            config.PreferOriginalLanguageStreams = chkPreferOriginalLanguageStreams.checked;
+            config.EnableOnlineSkipSegments = chkEnableOnlineSkipSegments.checked;
+            config.NetflixStylePlayerButtons = chkNetflixStylePlayerButtons.checked;
 
             // Subtitle settings
             config.EnableSubtitles = chkEnableSubtitles.checked;
@@ -1302,6 +1542,7 @@
             config.MoviePreferredId = selMoviePreferredId.value;
             config.TvShowPreferredId = selTvShowPreferredId.value;
             config.AnimePreferredId = selAnimePreferredId.value;
+            saveLanguagePreferences(config);
 
             await window.ApiClient.updatePluginConfiguration(pluginId, config);
             Dashboard.processPluginConfigurationUpdateResult();
@@ -1312,6 +1553,459 @@
             Dashboard.hideLoadingMsg();
           }
         }
+
+        // Per-user audio/subtitle languages (adapted from the MIT-licensed Language Failover plugin by Hightmar)
+        const selLanguageUser = document.querySelector('#selLanguageUser');
+        const chkLanguageUserEnabled = document.querySelector('#chkLanguageUserEnabled');
+        const languageUserSummary = document.querySelector('#languageUserSummary');
+        const languageUserSettings = document.querySelector('#languageUserSettings');
+        const selAudioMode = document.querySelector('#selAudioMode');
+        const selSubtitleMode = document.querySelector('#selSubtitleMode');
+        const audioModeDescription = document.querySelector('#audioModeDescription');
+        const subtitleModeDescription = document.querySelector('#subtitleModeDescription');
+        const audioLanguageBlock = document.querySelector('#audioLanguageBlock');
+        const subtitleLanguageBlock = document.querySelector('#subtitleLanguageBlock');
+        const preferNonForcedContainer = document.querySelector('#preferNonForcedContainer');
+        const forcedWhenAudioMatchesContainer = document.querySelector('#forcedWhenAudioMatchesContainer');
+        const subtitleOptionsBlock = document.querySelector('#subtitleOptionsBlock');
+        const audioListLabel = document.querySelector('#audioListLabel');
+        const chkLanguagePreferNonForced = document.querySelector('#chkLanguagePreferNonForced');
+        const chkLanguageForcedWhenAudioMatches = document.querySelector('#chkLanguageForcedWhenAudioMatches');
+        const chkRememberSeriesChoices = document.querySelector('#chkRememberSeriesChoices');
+        const audioLanguageList = document.querySelector('#audioLanguageList');
+        const subtitleLanguageList = document.querySelector('#subtitleLanguageList');
+        const selAudioLanguageAdd = document.querySelector('#selAudioLanguageAdd');
+        const selSubtitleLanguageAdd = document.querySelector('#selSubtitleLanguageAdd');
+        const txtLanguageSeriesSearch = document.querySelector('#txtLanguageSeriesSearch');
+        const languageSeriesResultList = document.querySelector('#languageSeriesResults');
+        const seriesOverrideList = document.querySelector('#seriesOverrideList');
+        const chkCorrectTracksAfterPlaybackStart = document.querySelector('#chkCorrectTracksAfterPlaybackStart');
+
+        const fallbackLanguages = [
+          ['eng', 'English'], ['jpn', 'Japanese'], ['spa', 'Spanish'], ['fre', 'French'], ['ger', 'German'],
+          ['ita', 'Italian'], ['por', 'Portuguese'], ['rus', 'Russian'], ['chi', 'Chinese'], ['kor', 'Korean'],
+          ['ara', 'Arabic'], ['hin', 'Hindi'], ['dut', 'Dutch'], ['pol', 'Polish'], ['tur', 'Turkish'],
+          ['swe', 'Swedish'], ['nor', 'Norwegian'], ['dan', 'Danish'], ['fin', 'Finnish'], ['ukr', 'Ukrainian']
+        ];
+        const subtitleModes = ['Default', 'WhenNeeded', 'Always', 'ForcedOnly', 'Off'];
+        const audioModeHelp = {
+          original: 'Plays the language the title was made in, e.g. Japanese for anime, English for Smallville.',
+          specific: 'Plays the first language from your list that the title has, e.g. a dub.',
+          default: 'Keeps the track Jellyfin picks.'
+        };
+        const subtitleModeHelp = {
+          WhenNeeded: 'On when the audio isn\'t in one of your languages, otherwise off.',
+          Always: 'Always on, in your first available language.',
+          ForcedOnly: 'Only signs and foreign-dialogue lines.',
+          Off: 'Subtitles stay off.',
+          Default: 'Keeps Jellyfin\'s own subtitle setting.'
+        };
+        let languageNames = new Map(fallbackLanguages);
+        let languageUsers = [];
+        let languagePreferences = [];
+        let languageUserId = '';
+        let languageSeriesSearchTimer = null;
+
+        function normalizeId(id) {
+          return String(id || '').replace(/-/g, '').toLowerCase();
+        }
+
+        function subtitleModeName(value) {
+          if (typeof value === 'number') return subtitleModes[value] || 'WhenNeeded';
+          return subtitleModes.includes(value) ? value : 'WhenNeeded';
+        }
+
+        function newLanguagePreference(userId) {
+          return {
+            UserId: userId, Enabled: true, PreferOriginalAudio: true, AudioLanguages: [], SubtitleLanguages: [],
+            SubtitleMode: 'WhenNeeded', PreferNonForcedSubtitles: true, PreferForcedWhenAudioMatches: true,
+            RememberSeriesChoices: true, SeriesOverrides: []
+          };
+        }
+
+        function preparePreference(pref) {
+          pref.AudioLanguages = pref.AudioLanguages || [];
+          pref.SubtitleLanguages = pref.SubtitleLanguages || [];
+          pref.SeriesOverrides = pref.SeriesOverrides || [];
+          pref.SubtitleMode = subtitleModeName(pref.SubtitleMode);
+          pref.RememberSeriesChoices = pref.RememberSeriesChoices !== false;
+          pref.AudioMode = pref.PreferOriginalAudio !== false ? 'original' : pref.AudioLanguages.length ? 'specific' : 'default';
+          pref.SeriesOverrides.forEach(entry => {
+            entry.AudioLanguages = entry.AudioLanguages || [];
+            entry.SubtitleLanguages = entry.SubtitleLanguages || [];
+            entry.SubtitleMode = entry.SubtitleMode === null || entry.SubtitleMode === undefined ? null : subtitleModeName(entry.SubtitleMode);
+          });
+          return pref;
+        }
+
+        function findLanguagePreference(userId) {
+          return languagePreferences.find(pref => normalizeId(pref.UserId) === normalizeId(userId)) || null;
+        }
+
+        // Editing any field turns preferences on for the selected user.
+        function editableLanguagePreference() {
+          if (!languageUserId) return null;
+          let pref = findLanguagePreference(languageUserId);
+          if (!pref) {
+            pref = preparePreference(newLanguagePreference(languageUserId));
+            languagePreferences.push(pref);
+          }
+          pref.Enabled = true;
+          return pref;
+        }
+
+        function languageLabel(code) {
+          const name = languageNames.get(code);
+          return name ? name + ' (' + code + ')' : code;
+        }
+
+        function languageNameList(codes) {
+          return codes.map(code => languageNames.get(code) || code).join(', ');
+        }
+
+        function parseLanguageCodes(text) {
+          return String(text || '').split(',').map(code => code.trim().toLowerCase()).filter(Boolean)
+            .filter((code, index, all) => all.indexOf(code) === index);
+        }
+
+        function clearChildren(element) {
+          while (element.firstChild) element.removeChild(element.firstChild);
+        }
+
+        function smallButton(text, label, handler) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'raised emby-button';
+          button.textContent = text;
+          button.title = label;
+          button.setAttribute('aria-label', label);
+          button.addEventListener('click', handler);
+          return button;
+        }
+
+        function textElement(tag, className, text) {
+          const element = document.createElement(tag);
+          element.className = className;
+          element.textContent = text;
+          return element;
+        }
+
+        function fillLanguageSelect(select) {
+          clearChildren(select);
+          const placeholder = document.createElement('option');
+          placeholder.value = '';
+          placeholder.textContent = 'Select a language...';
+          select.appendChild(placeholder);
+          [...languageNames.entries()]
+            .sort((a, b) => a[1].localeCompare(b[1]))
+            .forEach(([code, name]) => {
+              const option = document.createElement('option');
+              option.value = code;
+              option.textContent = name;
+              select.appendChild(option);
+            });
+          select.value = '';
+        }
+
+        function describePreference(pref) {
+          if (!pref || !pref.Enabled) return 'Jellyfin defaults';
+          const audio = pref.AudioMode === 'original'
+            ? 'Original audio' + (pref.AudioLanguages.length ? ', else ' + languageNameList(pref.AudioLanguages) : '')
+            : pref.AudioMode === 'specific' && pref.AudioLanguages.length ? languageNameList(pref.AudioLanguages) + ' audio' : 'Jellyfin audio';
+          const subtitleLanguages = pref.SubtitleLanguages.length ? languageNameList(pref.SubtitleLanguages) + ' ' : '';
+          const subtitles = {
+            WhenNeeded: subtitleLanguages ? subtitleLanguages + 'subtitles when needed' : 'Jellyfin subtitles',
+            Always: subtitleLanguages ? 'Always ' + subtitleLanguages + 'subtitles' : 'Jellyfin subtitles',
+            ForcedOnly: 'Forced subtitles only',
+            Off: 'No subtitles',
+            Default: 'Jellyfin subtitles'
+          }[pref.SubtitleMode];
+          const series = pref.SeriesOverrides.length ? ' · ' + pref.SeriesOverrides.length + ' series' : '';
+          return audio + ' · ' + subtitles + series;
+        }
+
+        function renderLanguageSummary() {
+          clearChildren(languageUserSummary);
+          languageUsers.forEach(user => {
+            const pref = findLanguagePreference(user.id);
+            const row = document.createElement('button');
+            row.type = 'button';
+            row.className = 'languageUserRow' + (user.id === languageUserId ? ' isCurrent' : '') + (pref && pref.Enabled ? ' isEnabled' : '');
+            row.title = 'Edit ' + user.name;
+            row.appendChild(textElement('strong', '', user.name));
+            row.appendChild(textElement('span', '', describePreference(pref)));
+            row.addEventListener('click', function () {
+              languageUserId = user.id;
+              selLanguageUser.value = user.id;
+              renderLanguageUser();
+            });
+            languageUserSummary.appendChild(row);
+          });
+        }
+
+        function renderLanguageList(list, codes) {
+          clearChildren(list);
+          codes.forEach((code, index) => {
+            const item = document.createElement('li');
+            item.className = 'languageItem';
+            const label = document.createElement('span');
+            label.textContent = languageLabel(code);
+            item.appendChild(label);
+            item.appendChild(smallButton('↑', 'Move ' + code + ' up', function () {
+              if (index === 0) return;
+              codes.splice(index - 1, 0, codes.splice(index, 1)[0]);
+              renderLanguageUser();
+            }));
+            item.appendChild(smallButton('↓', 'Move ' + code + ' down', function () {
+              if (index === codes.length - 1) return;
+              codes.splice(index + 1, 0, codes.splice(index, 1)[0]);
+              renderLanguageUser();
+            }));
+            item.appendChild(smallButton('✕', 'Remove ' + code, function () {
+              editableLanguagePreference();
+              codes.splice(index, 1);
+              renderLanguageUser();
+            }));
+            list.appendChild(item);
+          });
+        }
+
+        function renderSeriesOverrides(pref) {
+          clearChildren(seriesOverrideList);
+          pref.SeriesOverrides.forEach((entry, index) => {
+            const row = document.createElement('div');
+            row.className = 'seriesOverride';
+            const name = textElement('div', 'seriesName', entry.SeriesName || entry.SeriesId);
+            if (entry.Learned) name.appendChild(textElement('span', 'learnedBadge', 'Remembered'));
+            row.appendChild(name);
+            [['AudioLanguages', 'Audio, e.g. jpn,eng'], ['SubtitleLanguages', 'Subtitles, e.g. eng']].forEach(([key, placeholder]) => {
+              const input = document.createElement('input');
+              input.type = 'text';
+              input.className = 'emby-input';
+              input.placeholder = placeholder;
+              input.setAttribute('aria-label', (entry.SeriesName || 'Series') + ' ' + placeholder);
+              input.value = entry[key].join(',');
+              input.addEventListener('change', function () {
+                entry[key] = parseLanguageCodes(input.value);
+                entry.Learned = false;
+              });
+              row.appendChild(input);
+            });
+            const mode = document.createElement('select');
+            mode.className = 'emby-select';
+            mode.setAttribute('aria-label', (entry.SeriesName || 'Series') + ' subtitles');
+            [['', 'Subtitles: as user'], ['WhenNeeded', 'When needed'], ['Always', 'Always'], ['ForcedOnly', 'Forced only'], ['Off', 'Never'], ['Default', 'Jellyfin default']]
+              .forEach(([value, label]) => {
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = label;
+                mode.appendChild(option);
+              });
+            mode.value = entry.SubtitleMode || '';
+            mode.addEventListener('change', function () {
+              entry.SubtitleMode = mode.value || null;
+              entry.Learned = false;
+            });
+            row.appendChild(mode);
+            row.appendChild(smallButton('✕', 'Remove override for ' + (entry.SeriesName || 'series'), function () {
+              pref.SeriesOverrides.splice(index, 1);
+              renderLanguageUser();
+            }));
+            seriesOverrideList.appendChild(row);
+          });
+        }
+
+        function renderLanguageUser() {
+          const stored = findLanguagePreference(languageUserId);
+          const pref = stored || preparePreference(newLanguagePreference(languageUserId));
+          const enabled = !!(stored && stored.Enabled);
+          chkLanguageUserEnabled.checked = enabled;
+          languageUserSettings.classList[enabled ? 'remove' : 'add']('isInactive');
+          selAudioMode.value = pref.AudioMode;
+          selSubtitleMode.value = pref.SubtitleMode;
+          audioModeDescription.textContent = audioModeHelp[pref.AudioMode];
+          subtitleModeDescription.textContent = subtitleModeHelp[pref.SubtitleMode];
+          audioLanguageBlock.style.display = pref.AudioMode === 'default' ? 'none' : '';
+          subtitleLanguageBlock.style.display = pref.SubtitleMode === 'Off' || pref.SubtitleMode === 'Default' ? 'none' : '';
+          preferNonForcedContainer.style.display = pref.SubtitleMode === 'WhenNeeded' || pref.SubtitleMode === 'Always' ? '' : 'none';
+          forcedWhenAudioMatchesContainer.style.display = pref.SubtitleMode === 'WhenNeeded' ? '' : 'none';
+          subtitleOptionsBlock.style.display = pref.SubtitleMode === 'WhenNeeded' || pref.SubtitleMode === 'Always' ? '' : 'none';
+          audioListLabel.textContent = pref.AudioMode === 'original' ? 'Backup languages, if there is no original track' : 'Languages, in order';
+          chkLanguagePreferNonForced.checked = pref.PreferNonForcedSubtitles !== false;
+          chkLanguageForcedWhenAudioMatches.checked = pref.PreferForcedWhenAudioMatches !== false;
+          chkRememberSeriesChoices.checked = pref.RememberSeriesChoices;
+          renderLanguageList(audioLanguageList, pref.AudioLanguages);
+          renderLanguageList(subtitleLanguageList, pref.SubtitleLanguages);
+          renderSeriesOverrides(pref);
+          renderLanguageSummary();
+        }
+
+        function addLanguage(key, select) {
+          const code = String(select.value || '').trim().toLowerCase();
+          const pref = code ? editableLanguagePreference() : null;
+          if (!pref) return;
+          if (!pref[key].includes(code)) pref[key].push(code);
+          if (key === 'AudioLanguages' && pref.AudioMode === 'default') pref.AudioMode = 'specific';
+          select.value = '';
+          renderLanguageUser();
+        }
+
+        async function loadLanguageUsers() {
+          const api = window.ApiClient;
+          let users = [];
+          try {
+            if (api && typeof api.getUsers === 'function') users = await api.getUsers() || [];
+          } catch (err) {
+            console.error('Mediarow: Failed to load users', err);
+          }
+          try {
+            if (api && typeof api.getCultures === 'function') {
+              const cultures = await api.getCultures() || [];
+              const names = new Map(fallbackLanguages);
+              cultures.forEach(culture => {
+                const code = (culture.ThreeLetterISOLanguageName || '').toLowerCase();
+                if (code && culture.DisplayName) names.set(code, culture.DisplayName);
+              });
+              languageNames = names;
+            }
+          } catch (err) {
+            console.error('Mediarow: Failed to load languages', err);
+          }
+
+          fillLanguageSelect(selAudioLanguageAdd);
+          fillLanguageSelect(selSubtitleLanguageAdd);
+          clearChildren(selLanguageUser);
+          languageUsers = users.map(user => ({ id: normalizeId(user.Id), name: user.Name }));
+          languagePreferences.forEach(pref => {
+            if (!languageUsers.some(user => user.id === normalizeId(pref.UserId))) {
+              languageUsers.push({ id: normalizeId(pref.UserId), name: 'Unknown user (' + normalizeId(pref.UserId).slice(0, 8) + ')' });
+            }
+          });
+          languageUsers.forEach(user => {
+            const option = document.createElement('option');
+            option.value = user.id;
+            option.textContent = user.name;
+            selLanguageUser.appendChild(option);
+          });
+          if (!languageUsers.some(user => user.id === languageUserId)) languageUserId = languageUsers.length ? languageUsers[0].id : '';
+          selLanguageUser.value = languageUserId;
+          document.querySelector('#languageUserCard').style.display = '';
+          languageUserSettings.style.display = languageUserId ? '' : 'none';
+          renderLanguageUser();
+        }
+
+        function addSeriesOverride(series) {
+          const pref = editableLanguagePreference();
+          const id = normalizeId(series.Id);
+          if (!pref || !id) return;
+          if (!pref.SeriesOverrides.some(entry => normalizeId(entry.SeriesId) === id)) {
+            pref.SeriesOverrides.push({
+              SeriesId: id, SeriesName: series.Name, AudioLanguages: [], SubtitleLanguages: [], SubtitleMode: null, Learned: false
+            });
+          }
+          txtLanguageSeriesSearch.value = '';
+          clearChildren(languageSeriesResultList);
+          renderLanguageUser();
+        }
+
+        async function searchLanguageSeries() {
+          const api = window.ApiClient;
+          const term = txtLanguageSeriesSearch.value.trim();
+          clearChildren(languageSeriesResultList);
+          if (term.length < 2 || !api || typeof api.getItems !== 'function') return;
+          let results = [];
+          try {
+            const userId = typeof api.getCurrentUserId === 'function' ? api.getCurrentUserId() : undefined;
+            const result = await api.getItems(userId, {
+              IncludeItemTypes: 'Series', Recursive: true, SearchTerm: term, Limit: 8, SortBy: 'SortName'
+            });
+            results = (result && result.Items) || [];
+          } catch (err) {
+            console.error('Mediarow: Series search failed', err);
+          }
+          if (txtLanguageSeriesSearch.value.trim() !== term) return;
+          if (!results.length) {
+            languageSeriesResultList.appendChild(textElement('div', 'seriesResultEmpty', 'No series found.'));
+            return;
+          }
+          results.forEach(series => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'seriesResult';
+            button.textContent = '+ ' + series.Name + (series.ProductionYear ? ' (' + series.ProductionYear + ')' : '');
+            button.title = 'Add override for ' + series.Name;
+            button.addEventListener('click', function () { addSeriesOverride(series); });
+            languageSeriesResultList.appendChild(button);
+          });
+        }
+
+        function loadLanguagePreferences(config) {
+          languagePreferences = JSON.parse(JSON.stringify(config.UserLanguagePreferences || [])).map(preparePreference);
+          chkCorrectTracksAfterPlaybackStart.checked = config.CorrectTracksAfterPlaybackStart ?? true;
+          return loadLanguageUsers();
+        }
+
+        function saveLanguagePreferences(config) {
+          config.CorrectTracksAfterPlaybackStart = chkCorrectTracksAfterPlaybackStart.checked;
+          config.UserLanguagePreferences = languagePreferences
+            .filter(pref => pref.UserId)
+            .map(pref => {
+              const saved = Object.assign({}, pref, {
+                UserId: normalizeId(pref.UserId),
+                PreferOriginalAudio: pref.AudioMode === 'original',
+                AudioLanguages: pref.AudioMode === 'default' ? [] : pref.AudioLanguages,
+                SeriesOverrides: pref.SeriesOverrides.filter(entry => entry.SeriesId).map(entry => Object.assign({}, entry, {
+                  PreferOriginalAudio: entry.Learned ? entry.PreferOriginalAudio : (entry.AudioLanguages.length ? false : null)
+                }))
+              });
+              delete saved.AudioMode;
+              return saved;
+            });
+        }
+
+        selLanguageUser.addEventListener('change', function () {
+          languageUserId = normalizeId(selLanguageUser.value);
+          renderLanguageUser();
+        });
+        chkLanguageUserEnabled.addEventListener('change', function () {
+          if (chkLanguageUserEnabled.checked) {
+            editableLanguagePreference();
+          } else {
+            const pref = findLanguagePreference(languageUserId);
+            if (pref) pref.Enabled = false;
+          }
+          renderLanguageUser();
+        });
+        selAudioMode.addEventListener('change', function () {
+          const pref = editableLanguagePreference();
+          if (pref) pref.AudioMode = selAudioMode.value;
+          renderLanguageUser();
+        });
+        selSubtitleMode.addEventListener('change', function () {
+          const pref = editableLanguagePreference();
+          if (pref) pref.SubtitleMode = subtitleModeName(selSubtitleMode.value);
+          renderLanguageUser();
+        });
+        [[chkLanguagePreferNonForced, 'PreferNonForcedSubtitles'], [chkLanguageForcedWhenAudioMatches, 'PreferForcedWhenAudioMatches'],
+          [chkRememberSeriesChoices, 'RememberSeriesChoices']].forEach(([checkbox, key]) => {
+          checkbox.addEventListener('change', function () {
+            const pref = editableLanguagePreference();
+            if (pref) pref[key] = checkbox.checked;
+            renderLanguageUser();
+          });
+        });
+        document.querySelector('#btnAddAudioLanguage').addEventListener('click', function () { addLanguage('AudioLanguages', selAudioLanguageAdd); });
+        document.querySelector('#btnAddSubtitleLanguage').addEventListener('click', function () { addLanguage('SubtitleLanguages', selSubtitleLanguageAdd); });
+        txtLanguageSeriesSearch.addEventListener('input', function () {
+          clearTimeout(languageSeriesSearchTimer);
+          languageSeriesSearchTimer = setTimeout(searchLanguageSeries, 300);
+        });
+        txtLanguageSeriesSearch.addEventListener('keydown', function (event) {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            return searchLanguageSeries();
+          }
+        });
 
         // Set up event listeners once
         form.addEventListener('submit', saveConfig);

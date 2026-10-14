@@ -4,6 +4,7 @@ using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.Mediarow.Models;
 using Jellyfin.Plugin.Mediarow.Configuration;
 using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Providers;
@@ -208,8 +209,8 @@ public class PersistenceService
     }
 
     /// <summary>
-    /// Adds newly persisted files to Jellyfin. Series are imported directly with their whole episode tree, so their
-    /// page opens without waiting for a full library scan; movies (and series in non-standard library layouts) use a scan.
+    /// Adds newly persisted files to Jellyfin. Movies and series are imported directly (series with their whole
+    /// episode tree), so their page opens without waiting for a full library scan; non-standard library layouts use a scan.
     /// </summary>
     /// <param name="source">The catalog title, whose cached episode metadata is applied to the imported episodes.</param>
     public async Task AddToLibraryAsync(string createdPath, BaseItemKind type, BaseItemDto? source = null)
@@ -237,7 +238,78 @@ public class PersistenceService
             return;
         }
 
+        if (type == BaseItemKind.Movie && TryImportMovie(createdPath, source))
+        {
+            return;
+        }
+
         TriggerLibraryScan();
+    }
+
+    /// <summary>
+    /// Creates the movie item straight from its new folder, with the catalog metadata set in memory, so its page
+    /// opens without waiting for a full library scan. Reading the NFO and online metadata happen in the background.
+    /// </summary>
+    private bool TryImportMovie(string movieFolder, BaseItemDto? source)
+    {
+        if (_fileSystem == null || _providerManager == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            var libraryPath = Path.TrimEndingDirectorySeparator(Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(movieFolder)) ?? string.Empty);
+            if (_libraryManager.FindByPath(libraryPath, true) is not Folder libraryFolder || libraryFolder is CollectionFolder)
+            {
+                _logger.LogInformation("[PersistenceService] No library points directly at the movie folder's parent; using a library scan");
+                return false;
+            }
+
+            var directoryService = new DirectoryService(_fileSystem);
+            if (_libraryManager.ResolvePath(_fileSystem.GetDirectoryInfo(movieFolder), libraryFolder, directoryService, CollectionType.movies) is not Movie movie)
+            {
+                return false;
+            }
+
+            if (_libraryManager.GetItemById(movie.Id) is not Movie existing)
+            {
+                if (source != null)
+                {
+                    ApplyCatalogFields(movie, source);
+                }
+
+                movie.PresentationUniqueKey = movie.CreatePresentationUniqueKey();
+                libraryFolder.AddChild(movie);
+                existing = movie;
+            }
+
+            var options = new MetadataRefreshOptions(directoryService)
+            {
+                MetadataRefreshMode = MetadataRefreshMode.FullRefresh,
+                ImageRefreshMode = MetadataRefreshMode.FullRefresh
+            };
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _providerManager.RefreshSingleItem(existing, options, CancellationToken.None).ConfigureAwait(false);
+                    _logger.LogInformation("[PersistenceService] Loaded online metadata for movie {Name}", existing.Name);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("[PersistenceService] Background movie metadata refresh failed ({ErrorType})", ex.GetType().Name);
+                }
+            });
+
+            _logger.LogInformation("[PersistenceService] Imported movie {Name}", existing.Name);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("[PersistenceService] Direct movie import failed ({ErrorType}); falling back to a library scan", ex.GetType().Name);
+            return false;
+        }
     }
 
     /// <summary>

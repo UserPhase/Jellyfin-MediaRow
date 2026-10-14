@@ -59,6 +59,12 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         services.AddSingleton<PlaybackItemResolver>();
         services.AddSingleton<AioStreamsHttpRelay>();
         services.AddSingleton<AioStreamsPlaybackFilter>();
+        services.AddSingleton<LanguagePreferenceFilter>();
+        services.AddSingleton<SkipSegmentService>();
+        services.AddSingleton<SkipSegmentFilter>();
+        services.AddScoped<MediaBrowser.Controller.Events.IEventConsumer<PlaybackStartEventArgs>, LanguagePlaybackStartConsumer>();
+        services.AddScoped<MediaBrowser.Controller.Events.IEventConsumer<PlaybackProgressEventArgs>, LanguageTrackChangeConsumer>();
+        services.AddScoped<MediaBrowser.Controller.Events.IEventConsumer<PlaybackStopEventArgs>, LanguageTrackChangeConsumer>();
         services.AddSingleton<AppLibraryService>();
 
         // Register filters
@@ -80,6 +86,8 @@ public class ServiceRegistrator : IPluginServiceRegistrator
             options.Filters.AddService<DynamicItemEndpointsFilter>(order: 0);   // Handle secondary endpoints
             options.Filters.AddService<SeasonEpisodeFilter>(order: 0);          // Handle seasons/episodes
             options.Filters.AddService<AioStreamsPlaybackFilter>(order: 0);
+            options.Filters.AddService<LanguagePreferenceFilter>(order: 1);    // After AIOStreams source selection
+            options.Filters.AddService<SkipSegmentFilter>(order: 1);            // Online intro/credits markers
             options.Filters.AddService<SubtitleFilter>(order: 0);               // Handle subtitles for dynamic items
             options.Filters.AddService<VirtualPlaybackProgressFilter>(order: 1);
             options.Filters.AddService<SearchActionFilter>(order: 1);

@@ -145,6 +145,23 @@ TMDB metadata is fetched in a single API call using `append_to_response` (credit
 - Display metadata in your preferred language
 - Supports 20+ languages via ISO 639-2/3 codes
 
+### Audio & Subtitle Languages per User
+- **Prefer original language** (on by default): AIOStreams results in the title's original language move to the top, so Smallville plays an English release instead of a Russian dub, and the original audio track is selected in multi-audio releases
+- Every user gets their own settings, set by an admin under **Audio & Subtitle Languages**, for library videos and Mediarow streams alike. One user can watch everything in the original language with English subtitles, while another always gets German audio and no subtitles
+- Audio: *the original language*, *specific languages* (in priority order), or *Jellyfin default*
+- Subtitles: *when I don't understand the audio*, *always*, *forced only* (signs/songs), *off*, or *Jellyfin default*
+- Per-series overrides (for example Japanese audio with English subtitles for one anime). **Series choices are remembered:** when a user changes the audio or subtitles during an episode, the next episodes of that series use the same tracks for that user (can be turned off per user). Remembered series are marked on the configuration page and can be edited or removed
+- Tracks are chosen before playback starts, so the stream does not restart, and a track picked by hand always wins. For apps that ignore the server's choice, Mediarow switches tracks about 1.5 seconds after playback starts (can be turned off)
+- Adapted from [Language Failover](https://github.com/Hightmar/jellyfin-langage-failover) by Hightmar (MIT). It replaces that plugin, so don't run both: each would switch tracks
+
+### Skip Intro & Next Episode
+- **Skip Intro / Skip Recap** buttons and a Netflix-style **Next Episode** prompt when the credits start. In Jellyfin Web the next episode starts after a 10-second countdown (the button fills up; pausing pauses it, **Hide** lets you watch the credits) instead of when the file ends. Needs **Play next episode automatically** in the user's playback settings
+- **Android TV:** set the app's **Media segment actions → Outro** to **Skip** (playback settings). When the credits start, the app goes straight to its own Next Up screen, which starts the next episode after a short countdown. The default *Ask to skip* shows a Skip button for 8 seconds instead
+- Intro, recap and credits times come from [AniSkip](https://aniskip.com) (anime), [TheIntroDB](https://theintrodb.org) and [IntroDB](https://introdb.app). No API keys, no scanning, and it works for Mediarow streams that never existed on disk
+- Uses Jellyfin's standard media segments (Jellyfin 10.10 and newer), so Jellyfin Web, Android TV, Swiftfin, Findroid and other apps with segment support show the buttons. Markers from other plugins such as Intro Skipper always take priority
+- Each user can set **Settings → Playback → Media segments** to skip automatically, ask (default) or do nothing
+- Times are community-submitted and can be a few seconds off for a different release; episodes nobody has submitted yet fall back to Jellyfin's normal up-next prompt shortly before the end
+
 ## Configuration
 
 Mediarow contains a self-contained Home runtime targeting Jellyfin 12.0 and .NET 10. It does not require separate Home Sections or File Transformation plugins for virtual rows, and it does not import the virtual catalog into Jellyfin's database.
@@ -158,6 +175,8 @@ Rows are populated by the configured Mediarow provider and return the same compl
 Home rows are virtual. They do not require the catalog to be imported into a Jellyfin library. Enable persistence separately if selected movies or series should become real `.strm` library items and participate in Jellyfin's native Continue Watching and Next Up behavior.
 
 When a series is opened for the first time, its catalog metadata is written into locked NFO files so Jellyfin's library scan does not query online providers for every episode. The series is imported directly instead of through a full library scan: like Gelato, the plugin builds every season and episode in memory with numbers, series links and catalog titles, plots and dates already set, and saves the whole tree at once. The details page opens within a second or two with all seasons and episodes browsable, and Next Up shows the first episode (or your real next episode) right away. If you stopped part-way through a later episode, Next Up (on the series page and in the Home Next Up row) shows that episode with your saved position instead of jumping back to the pilot. Once the scan finishes, the series and season NFOs are unlocked and refreshed in the background to add cast, logos and season posters. Episodes keep the catalog's titles, plots and stills.
+
+Movies are imported the same way: the movie is created in the library with its catalog title, plot, rating and artwork as soon as its `.strm` is written, and online metadata (cast, logos) loads in the background. The AIOStreams lookup starts at the same moment, in parallel. A details page waits at most about one second for the stream list: if AIOStreams is slower on a title's first open, the page shows right away without the **Version** picker, and Play still uses the same lookup and your language rules. Stream lists are cached for five minutes, so reopening the title shows every version instantly. Once the list arrives, the best stream is probed in the background so Play has less to wait for.
 
 Rows are prepared in the background when Jellyfin starts, so the first Home visit does not wait on the catalog addon. Rows that load at the same time share a single manifest and catalog request. Posters are cached in server memory for up to 12 hours and in the browser for a day. Failed catalog responses are not cached.
 
@@ -177,7 +196,23 @@ How it works:
 - **Injected Home (web-based clients).** The script is plain ES5 and the CSS avoids newer features such as flex `gap` and `:focus-visible` selector lists, so it runs on older TV browsers. Cards are focusable: Left/Right on a remote or keyboard moves between posters and wraps at the end of a row, Up/Down follows Jellyfin's normal spatial navigation, and Enter opens the title. On touch screens the rows use native swipe scrolling. Layouts adapt for phones and tablets and use Jellyfin's TV layout and safe-area insets.
 - **App libraries (native clients).** With **Show rows in TV and native apps** enabled (the default), Mediarow adds one virtual library per configured row to `/UserViews`. Each library supports the standard Latest, Items (sorting, filtering, paging) and image endpoints. Opening a title imports it like a click on the web Home, so it plays with native Jellyfin playback. Nothing is added to your real libraries until a title is opened.
 - The web client already shows the injected rows, so it hides these libraries by default (it is recognised by a cookie set with the injected page). Enable **Also list these libraries in the web client** if you want them there too.
-- Playback from any client requires AIOStreams with persistence enabled. The first time a title is opened it can take a few seconds while it is imported. After that it opens instantly.
+- Playback from any client requires AIOStreams with persistence enabled. The first time a title is opened it takes about a second while it is imported. After that it opens instantly.
+
+### Android TV feature check
+
+Checked against the official Jellyfin Android TV app (current source) and a simulated Android TV session on Jellyfin 12:
+
+| Feature | Android TV |
+|---|---|
+| Home rows | ✅ As app libraries (*Popular Movies*, *Drama Movies*, …) with native "Latest" rows on Home |
+| Search | ✅ Catalog movies and series appear in the app's normal search |
+| Playback (AIOStreams) | ✅ Native player. Streams direct-play when the TV supports the codecs, including PGS subtitles |
+| Continue Watching / Next Up / resume position | ✅ Server-side, the same as on the web |
+| Per-user audio & subtitle languages | ✅ Applied before playback starts. The app remembers the last language you picked by hand and prefers it, so keep **Correct tracks after playback starts** on to get each user's settings back |
+| Remembered series choices | ✅ The app reports track changes, so they are learned the same way as on the web |
+| Skip Intro / Skip Credits | ✅ The app's own skip prompt, using Mediarow's segments. Skipping the credits goes straight to the app's Next Up screen. Set **Media segment actions → Outro** to **Skip** to do this automatically when the credits start, Netflix-style |
+| Skip Recap | ⚙️ Off by default in the app: enable it in the app's playback settings under **Media segment actions** |
+| Netflix-style player buttons, filter tabs, looping rows | ❌ Web only: Android TV is a native app and uses its own player and Home screen |
 
 ### Libraries visible but no Home rows
 
@@ -240,6 +275,7 @@ https://your-aiometadata-instance.com/xxxxx
 | Setting | Description |
 |---------|-------------|
 | `AIOStreamsUrl` | Full AIOStreams addon URL including encrypted config (e.g., `https://aiostreams.elfhosted.com/E2_xxxxx`) |
+| `PreferOriginalLanguageStreams` | Default `true`. Sorts results in the title's original language first and selects the original audio track. Users with their own language preferences use their lists instead |
 
 AIOStreams playback uses Jellyfin's native media-source and player pipeline, not a raw browser redirect. Enable persistence and automatic scans, set the **Movies path**, **Series path** and **Anime path**, then add those exact folders as Movies/Shows libraries. Mediarow does not append category subfolders to these settings.
 
@@ -249,7 +285,7 @@ If every poster reports that it could not be opened, version 2.0.3 displays the 
 
 Opening a virtual title enriches its metadata, saves small `.strm` and `.nfo` files, and waits for Jellyfin to assign a real library ID. Series episodes are populated before creation. Existing matching library titles are reused rather than overwritten.
 
-Stream choices retain the addon's order. Only HTTP(S) media URLs are supported; torrent/info-hash-only and external-player entries are skipped. `notWebReady` is not treated as a reason to discard a stream: Jellyfin probes the selected file and can remux/transcode it. Streams requiring `behaviorHints.proxyHeaders.request` use a private, loopback-only relay because Jellyfin 12's probe does not forward all HTTP headers. The relay supports byte ranges and rewrites HLS playlist/segment/key URLs. Response headers intended for an addon proxy are not applied as request headers.
+Stream choices retain the addon's order, except that language preferences move matching releases up: unlabeled and multi-language releases keep their place, and releases tagged only with other languages move to the bottom. Only HTTP(S) media URLs are supported; torrent/info-hash-only and external-player entries are skipped. `notWebReady` is not treated as a reason to discard a stream: Jellyfin probes the selected file and can remux/transcode it. Streams requiring `behaviorHints.proxyHeaders.request` use a private, loopback-only relay because Jellyfin 12's probe does not forward all HTTP headers. The relay supports byte ranges and rewrites HLS playlist/segment/key URLs. Response headers intended for an addon proxy are not applied as request headers.
 
 Streams cache for five minutes (empty results for 30 seconds), with isolation by addon configuration. The selected source is probed on opening; real audio/video/subtitle indexes, codecs, duration, and bitrate drive playback decisions. Initial probing uses a three-second media-analysis window and a 30-second request timeout so large remote files do not inherit excessively long server analysis defaults. The three-second window also applies when Jellyfin transcodes that opened source, preventing delayed HLS segments. Global settings and unrelated library sources are unchanged. Probe results cache for six hours, and opening a persisted title's details page warms the probe in the background so Play starts quickly. Changing addon configuration or stream URL does not reuse unrelated media information.
 
@@ -336,6 +372,22 @@ Control which ID is used for stream lookups:
 | `LanguageMode` | Default, Override | Default uses original language from API |
 | `PreferredLanguage` | ISO 639-2 code | Language code (eng, jpn, spa, fra, deu, etc.) |
 
+### Audio & Subtitle Languages
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `UserLanguagePreferences` | empty | Per user: `AudioLanguages` and `SubtitleLanguages` (ISO 639-2 codes in priority order), `PreferOriginalAudio`, `SubtitleMode` (`Default`, `WhenNeeded`, `Always`, `ForcedOnly`, `Off`), `PreferNonForcedSubtitles`, `PreferForcedWhenAudioMatches`, `RememberSeriesChoices`, and `SeriesOverrides` (each with optional `SubtitleMode`/`PreferOriginalAudio` and a `Learned` flag for remembered choices). Edit them on the configuration page |
+| `CorrectTracksAfterPlaybackStart` | true | Sends a track switch after playback starts when an app ignored the server's choice |
+
+With `WhenNeeded`: when the audio is in a subtitle language that ranks at least as high as any subtitle on offer, subtitles are turned off, or forced subtitles in that language are shown when `PreferForcedWhenAudioMatches` is on. Otherwise the highest-ranked subtitle language is used, preferring full over forced subtitles. Empty lists leave that track type to Jellyfin.
+
+### Skip Intro & Next Episode
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `EnableOnlineSkipSegments` | true | Adds intro, recap and credits markers from AniSkip, TheIntroDB and IntroDB to episodes without markers of their own |
+| `NetflixStylePlayerButtons` | true | Netflix-style skip button and next-episode card in Jellyfin Web; the next episode starts 10 seconds after the credits begin (reload the page after changing) |
+
 ### Subtitle Settings
 
 | Setting | Default | Description |
@@ -370,7 +422,7 @@ Enable persistence to save virtual items as real Jellyfin library items with ful
 2. Set **Movies path**, **Series path** and **Anime path** to exact absolute writable server folders (e.g., `/media/films` and `/media/shows`, or `D:\Media\Movies` and `D:\Media\Series`)
 3. Add the exact Movies path as a Movies library and the Series/Anime paths as Shows libraries; keep automatic library scanning enabled
 4. When you click on a virtual item, it creates a .strm file in this folder
-5. Library scan adds it as a real item with full tracking
+5. The new item is added straight into that library (no full library scan) with full tracking; a library scan is only used as a fallback when the folder is not directly a library path
 
 Existing root-based settings retain their original destinations: the new fields initially display the legacy root plus `movies`, `tv` and `anime`. Saving stores those explicit paths. Changing a path does not move existing items, and cleanup only considers items in the currently configured folders. The plugin does not automatically register Jellyfin libraries.
 
@@ -498,4 +550,4 @@ If you prefer a Pages URL, enable GitHub Pages for the `gh-pages` branch at `/` 
 
 ## License
 
-MIT - See [LICENSE](LICENSE) file for details. Based on [jellyfin-dynamic-library](https://github.com/pythcon/jellyfin-dynamic-library) by pythcon.
+MIT - See [LICENSE](LICENSE) file for details. Based on [jellyfin-dynamic-library](https://github.com/pythcon/jellyfin-dynamic-library) by pythcon. Per-user language preferences are adapted from [Language Failover](https://github.com/Hightmar/jellyfin-langage-failover) by Hightmar (MIT). Intro and credits times are provided by the AniSkip, TheIntroDB and IntroDB communities.

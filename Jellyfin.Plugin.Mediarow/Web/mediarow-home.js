@@ -589,6 +589,111 @@
         return document.querySelector('.sections') || document.querySelector('.homeSections') || document.querySelector('.homePage');
     }
 
+    var NEXT_EPISODE_COUNTDOWN_SECONDS = 10;
+    // Jellyfin's own prompt opens at most 40 seconds before the end; earlier means the credits started.
+    var NATIVE_UP_NEXT_SECONDS = 45;
+
+    // Jellyfin counts down to the end of the file, which can include minutes of credits.
+    // When the prompt opened at the credits, Netflix-style: count down a few seconds and start the next episode.
+    function nextEpisodeCountdown(state, nativeRemaining, nowMs, paused) {
+        if (!(nativeRemaining >= 0)) {
+            return null;
+        }
+        if (state.credits === undefined) {
+            state.credits = nativeRemaining > NATIVE_UP_NEXT_SECONDS;
+            state.total = state.credits ? NEXT_EPISODE_COUNTDOWN_SECONDS : Math.max(nativeRemaining, 1);
+            state.deadline = nowMs + NEXT_EPISODE_COUNTDOWN_SECONDS * 1000;
+            state.last = nowMs;
+        }
+        if (paused && state.credits) {
+            state.deadline += nowMs - state.last;
+        }
+        state.last = nowMs;
+        var seconds = nativeRemaining;
+        if (state.credits) {
+            seconds = Math.min(nativeRemaining, Math.max(0, Math.ceil((state.deadline - nowMs) / 1000)));
+        } else if (nativeRemaining > state.total) {
+            state.total = nativeRemaining;
+        }
+        var start = state.credits && seconds <= 0 && !state.started;
+        if (start) {
+            state.started = true;
+        }
+        return {
+            seconds: seconds,
+            progress: Math.round((1 - seconds / state.total) * 1000) / 10,
+            start: start
+        };
+    }
+
+    function watchNextEpisodeCountdown() {
+        if (!window.getComputedStyle || !document.documentElement ||
+            !getComputedStyle(document.documentElement).getPropertyValue('--mediarow-player-skin').trim()) {
+            return;
+        }
+        var state = {};
+        var observer = null;
+        var shown = null;
+
+        function showSeconds(text) {
+            var countdown = text.querySelector('.upNextDialog-countdownText');
+            var match = countdown && /\d+/.exec(countdown.textContent || '');
+            if (match && shown !== null && parseInt(match[0], 10) !== shown) {
+                countdown.textContent = countdown.textContent.replace(/\d+/, String(shown));
+            }
+        }
+
+        function reset() {
+            state = {};
+            shown = null;
+            if (observer) {
+                observer.disconnect();
+                observer = null;
+            }
+        }
+
+        setInterval(function () {
+            var dialog = document.querySelector('.upNextContainer:not(.hide):not(.upNextDialog-hidden)');
+            var button = dialog && dialog.querySelector('.btnStartNow');
+            var text = dialog && dialog.querySelector('.upNextDialog-nextVideoText');
+            if (!button || !text) {
+                reset();
+                return;
+            }
+            var native = NaN;
+            if (state.credits) {
+                native = Infinity;
+            } else {
+                var match = /\d+/.exec((text.querySelector('.upNextDialog-countdownText') || {}).textContent || '');
+                native = match ? parseInt(match[0], 10) : NaN;
+            }
+            var video = document.querySelector('video');
+            var result = nextEpisodeCountdown(state, native, Date.now(), !!(video && video.paused));
+            button.style.setProperty('--mediarow-next-progress', result === null ? '100%' : result.progress + '%');
+            if (!result || !state.credits) {
+                return;
+            }
+            shown = result.seconds;
+            if (!observer && window.MutationObserver) {
+                // Jellyfin rewrites its countdown text every 400 ms; replace it before it is painted.
+                observer = new MutationObserver(function () {
+                    showSeconds(text);
+                });
+                observer.observe(text, { childList: true, subtree: true, characterData: true });
+            }
+            showSeconds(text);
+            if (result.start) {
+                button.click();
+            }
+        }, 250);
+    }
+
+    try {
+        watchNextEpisodeCountdown();
+    } catch (error) {
+        console.debug('Mediarow: player skin unavailable', error);
+    }
+
     var attempts = 0;
     var retryTimer = setInterval(function () {
         attempts++;

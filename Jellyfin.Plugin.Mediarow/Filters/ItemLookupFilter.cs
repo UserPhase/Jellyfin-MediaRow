@@ -87,8 +87,27 @@ public class ItemLookupFilter : IAsyncActionFilter, IOrderedFilter
     // Run before other filters
     public int Order => 0;
 
+    // Details pages wait for AIOStreams at most until this point of the request (cached lookups return instantly).
+    private static readonly TimeSpan DetailsStreamBudget = TimeSpan.FromMilliseconds(1000);
+    private static readonly TimeSpan MinimumStreamWait = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>
+    /// Builds the version list for a persisted item and warms the probe of its first stream. Runs without the
+    /// request's cancellation so a details page that stops waiting still leaves the result cached for Play.
+    /// </summary>
+    private async Task<MediaSourceInfo[]> LoadStreamChoicesAsync(MediaBrowser.Controller.Entities.BaseItem libraryItem)
+    {
+        var candidates = (await _nativeAioProvider.GetMediaSources(libraryItem, CancellationToken.None).ConfigureAwait(false)).ToArray();
+        var nativeSources = await _mediaSourceManager.GetPlaybackMediaSources(
+            libraryItem, null!, false, false, CancellationToken.None).ConfigureAwait(false);
+        var sources = nativeSources.Where(source => candidates.Any(candidate => candidate.Id == source.Id)).ToArray();
+        _nativeAioProvider.WarmProbe(candidates.FirstOrDefault(candidate => candidate.Id == sources.FirstOrDefault()?.Id));
+        return sources;
+    }
+
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
+        var requestTimer = System.Diagnostics.Stopwatch.StartNew();
         var actionName = (context.ActionDescriptor as ControllerActionDescriptor)?.ActionName;
         var controllerName = (context.ActionDescriptor as ControllerActionDescriptor)?.ControllerName;
 
@@ -129,6 +148,11 @@ public class ItemLookupFilter : IAsyncActionFilter, IOrderedFilter
         {
             try
             {
+                if (cachedItem.Type == BaseItemKind.Movie)
+                {
+                    _nativeAioProvider.PrefetchMovieStreams(cachedItem.ProviderIds?.GetValueOrDefault("Imdb"));
+                }
+
                 var resolved = await _playbackResolver.ResolveAsync(cachedItem, context.HttpContext.RequestAborted);
                 if (resolved == null)
                 {
@@ -261,13 +285,28 @@ public class ItemLookupFilter : IAsyncActionFilter, IOrderedFilter
                         // Then add MediaSources from AIOStreams
                         if (result.Result is ObjectResult objResult && objResult.Value is BaseItemDto dto)
                         {
+                            var streamChoices = LoadStreamChoicesAsync(libraryItem);
+                            var budget = DetailsStreamBudget - requestTimer.Elapsed;
+                            if (budget < MinimumStreamWait)
+                            {
+                                budget = MinimumStreamWait;
+                            }
+
+                            if (await Task.WhenAny(streamChoices, Task.Delay(budget, context.HttpContext.RequestAborted)) != streamChoices)
+                            {
+                                // A cold AIOStreams lookup takes seconds; show the page now. Play asks PlaybackInfo,
+                                // which reuses this in-flight lookup, and the version list appears on the next open.
+                                dto.MediaSources = null;
+                                _ = streamChoices.ContinueWith(
+                                    task => _logger.LogDebug("[Mediarow] Background stream choices failed ({ErrorType})", task.Exception?.InnerException?.GetType().Name),
+                                    CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+                                _logger.LogInformation("[Mediarow] Returned {Name} before AIOStreams finished; stream choices load in the background", dto.Name);
+                                return;
+                            }
+
                             try
                             {
-                                var candidates = (await _nativeAioProvider.GetMediaSources(libraryItem, context.HttpContext.RequestAborted)).ToArray();
-                                var nativeSources = await _mediaSourceManager.GetPlaybackMediaSources(
-                                    libraryItem, null!, false, false, context.HttpContext.RequestAborted);
-                                dto.MediaSources = nativeSources.Where(source => candidates.Any(candidate => candidate.Id == source.Id)).ToArray();
-                                _nativeAioProvider.WarmProbe(candidates.FirstOrDefault(candidate => candidate.Id == dto.MediaSources.FirstOrDefault()?.Id));
+                                dto.MediaSources = await streamChoices;
                                 _logger.LogInformation("[Mediarow] Added {Count} AIOStreams MediaSources to persisted item {Name}",
                                     dto.MediaSources?.Length ?? 0, dto.Name);
                             }

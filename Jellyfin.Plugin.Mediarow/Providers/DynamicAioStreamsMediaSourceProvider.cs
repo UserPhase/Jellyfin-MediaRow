@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Jellyfin.Plugin.Mediarow.Api;
 using Jellyfin.Plugin.Mediarow.Configuration;
+using Jellyfin.Plugin.Mediarow.Extensions;
 using Jellyfin.Plugin.Mediarow.Models;
 using Jellyfin.Plugin.Mediarow.Services;
 using MediaBrowser.Controller.Entities;
@@ -16,6 +17,7 @@ using MediaBrowser.Model.Dlna;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.MediaInfo;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
@@ -32,12 +34,14 @@ public class DynamicAioStreamsMediaSourceProvider : IMediaSourceProvider
     private readonly ILogger<DynamicAioStreamsMediaSourceProvider> _logger;
     private readonly DynamicItemCache _itemCache;
     private readonly AioStreamsHttpRelay _relay;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
 
     public DynamicAioStreamsMediaSourceProvider(
         IAIOStreamsClient client, ILibraryManager libraryManager, IMediaEncoder encoder,
         IMemoryCache cache, ILogger<DynamicAioStreamsMediaSourceProvider> logger, DynamicItemCache itemCache,
-        AioStreamsHttpRelay relay)
+        AioStreamsHttpRelay relay, IHttpContextAccessor? httpContextAccessor = null)
     {
+        _httpContextAccessor = httpContextAccessor;
         _client = client;
         _libraryManager = libraryManager;
         _encoder = encoder;
@@ -48,6 +52,23 @@ public class DynamicAioStreamsMediaSourceProvider : IMediaSourceProvider
     }
 
     protected virtual PluginConfiguration Config => MediarowPlugin.Instance?.Configuration ?? new PluginConfiguration();
+
+    /// <summary>
+    /// Starts the AIOStreams lookup for a movie that is still being added to the library, so the stream list is
+    /// ready (or in flight) by the time its details page asks for it.
+    /// </summary>
+    public void PrefetchMovieStreams(string? imdbId)
+    {
+        if (Config.StreamProvider != StreamProvider.AIOStreams || !_client.IsConfigured ||
+            string.IsNullOrWhiteSpace(imdbId) || !imdbId.StartsWith("tt", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _ = _client.GetMovieStreamsAsync(imdbId).ContinueWith(
+            task => _logger.LogDebug("[Mediarow] Stream prefetch failed ({ErrorType})", task.Exception?.InnerException?.GetType().Name),
+            CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+    }
 
     public bool IsMediarowItem(BaseItem item)
     {
@@ -108,7 +129,12 @@ public class DynamicAioStreamsMediaSourceProvider : IMediaSourceProvider
 
         var sources = new List<MediaSourceInfo>();
         var seenUrls = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var stream in response.Streams)
+        var preference = CurrentLanguagePreference(item);
+        var streams = StreamLanguageDetector.OrderByLanguages(
+            response.Streams,
+            stream => stream == null ? null : $"{stream.Name}\n{stream.Description ?? stream.Title}\n{stream.BehaviorHints?.Filename}",
+            preference?.SourceLanguages(item.GetInheritedOriginalLanguage()) ?? []);
+        foreach (var stream in streams)
         {
             if (stream == null || !Uri.TryCreate(stream.Url, UriKind.Absolute, out var uri) ||
                 uri.Scheme is not ("http" or "https") || !string.IsNullOrEmpty(uri.UserInfo))
@@ -223,11 +249,53 @@ public class DynamicAioStreamsMediaSourceProvider : IMediaSourceProvider
             await _libraryManager.UpdateItemAsync(item, item.GetParent(), ItemUpdateType.MetadataEdit, cancellationToken).ConfigureAwait(false);
         }
         source.DefaultAudioStreamIndex = info.MediaStreams.FirstOrDefault(stream => stream.Type == MediaStreamType.Audio)?.Index;
+        if (CurrentLanguagePreference(item) is { } preference &&
+            TrackLanguageSelector.Select(source.MediaStreams, preference, item.GetInheritedOriginalLanguage()).AudioStreamIndex is { } audioIndex)
+        {
+            PreferAudio(source, source.MediaStreams.First(stream => stream.Index == audioIndex));
+        }
         source.SupportsDirectPlay = !source.Path.StartsWith(_relay.BaseUrl + "/Mediarow/AIOStreams/Source/", StringComparison.OrdinalIgnoreCase);
         source.RequiresOpening = false;
         source.LiveStreamId = Guid.NewGuid().ToString("N");
         _logger.LogInformation("[Mediarow] Probed selected AIOStreams source {SourceId}: {Count} tracks", source.Id, source.MediaStreams.Count);
         return new RemoteStream(source);
+    }
+
+    /// <summary>
+    /// Marks the original-language audio track as the default. Jellyfin re-selects the audio track after
+    /// opening a stream and honours the default flag when "Play default audio track" is enabled.
+    /// </summary>
+    public static void PreferOriginalAudio(MediaSourceInfo source, string? originalLanguage)
+    {
+        var original = StreamLanguageDetector.FindOriginalAudio(source.MediaStreams, originalLanguage);
+        if (original != null)
+        {
+            PreferAudio(source, original);
+        }
+    }
+
+    private static void PreferAudio(MediaSourceInfo source, MediaStream preferred)
+    {
+        foreach (var stream in source.MediaStreams.Where(stream => stream.Type == MediaStreamType.Audio))
+        {
+            stream.IsDefault = ReferenceEquals(stream, preferred);
+        }
+
+        source.DefaultAudioStreamIndex = preferred.Index;
+    }
+
+    /// <summary>
+    /// Returns the probed tracks of a source, sharing the cached probe used when the stream opens.
+    /// </summary>
+    public async Task<IReadOnlyList<MediaStream>> GetProbedStreamsAsync(MediaSourceInfo source, CancellationToken cancellationToken)
+        => (await ProbeAsync(source, cancellationToken).ConfigureAwait(false)).MediaStreams;
+
+    // The requesting user's language preference; users without one get the global original-language option.
+    private LanguagePreference? CurrentLanguagePreference(BaseItem item)
+    {
+        var userId = Guid.Empty;
+        _httpContextAccessor?.HttpContext?.TryGetUserId(out userId);
+        return TrackLanguageSelector.Resolve(Config, userId, item, useGlobalFallback: true);
     }
 
     /// <summary>
