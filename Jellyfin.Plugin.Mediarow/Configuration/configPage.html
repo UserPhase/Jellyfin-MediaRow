@@ -379,12 +379,7 @@
                       <h4 style="margin: 0 0 0.5em 0; color: #00a4dc;">How it works</h4>
                       <p style="margin: 0; color: #999; font-size: 0.9em;"> AIOStreams is a Stremio addon aggregator that handles stream discovery and delivery.<br> Configure your sources (debrid services, torrent indexers, NZB via NZBDav) in AIOStreams,<br> then paste your addon URL here. The plugin will query AIOStreams for available streams<br> when you play content. </p>
                     </div>
-                    <div class="checkboxContainer checkboxContainer-withDescription">
-                      <label> <input is="emby-checkbox" type="checkbox" id="chkPreferOriginalLanguageStreams" /> <span>Prefer original language</span> </label>
-                      <div class="fieldDescription">
-                        Moves AIOStreams results in the title's original language (for example English for Smallville) to the top, so they play by default, and selects the original-language audio track in multi-audio releases. Results tagged only with other languages (such as a Russian dub) move to the bottom. Unlabeled results keep their order.
-                      </div>
-                    </div>
+
                     <div class="checkboxContainer checkboxContainer-withDescription">
                       <label> <input is="emby-checkbox" type="checkbox" id="chkEnableStreamRecovery" /> <span>Recover expired streams</span> </label>
                       <div class="fieldDescription">
@@ -682,24 +677,19 @@
                   </div>
                 </div>
               </div>
-              <details class="mrDetails">
-                <summary>Cleanup after watching</summary>
-                <div class="mrDetailsBody">
-                  <div class="mrCard">
-                    <h3>Watched titles</h3>
-                    <p class="sectionLead">Removes imported Mediarow items after they are watched.</p>
+              <div class="mrCard" id="watchedCleanupSettings">
+                    <h3>Cleanup after watching</h3>
+                    <p class="sectionLead">Remove generated Mediarow files and library entries after watching. Favorites are kept.</p>
                     <div class="checkboxContainer checkboxContainer-withDescription">
-                      <label> <input is="emby-checkbox" type="checkbox" id="chkCleanupWatchedMovies" /> <span>Remove Mediarow movies after watching</span> </label>
+                      <label> <input is="emby-checkbox" type="checkbox" id="chkCleanupWatchedMovies" /> <span>Remove watched movies</span> </label>
                     </div>
                     <div class="checkboxContainer checkboxContainer-withDescription">
-                      <label> <input is="emby-checkbox" type="checkbox" id="chkCleanupCompletedSeries" /> <span>Remove fully watched, ended Mediarow series</span> </label>
+                      <label> <input is="emby-checkbox" type="checkbox" id="chkCleanupCompletedSeries" /> <span>Remove fully watched, ended series</span> </label>
                     </div>
                     <div class="fieldDescription">
-                      Both options are off by default. An hourly scheduled task removes generated STRM/NFO files and their library entries only after every enabled user with access has watched them. Series must be marked Ended by Jellyfin metadata and every episode (including specials) must be watched. Ongoing or unknown-status series, favorites, active playback, unindexed streams, and folders containing other media are kept. Files changed within the last ten minutes are kept until a later run. Artwork and subtitles are left on disk. Removal affects the shared library; watching again requires reimporting.
+                      If <strong>Remove unsaved titles</strong> is enabled above, its grace-period cleanup takes priority. Both options are off by default. An hourly scheduled task removes generated STRM/NFO files and their library entries only after every enabled user with access has watched them. Series must be marked Ended by Jellyfin metadata and every episode (including specials) must be watched. Ongoing or unknown-status series, favorites, active playback, unindexed streams, and folders containing other media are kept. Files changed within the last ten minutes are kept until a later run. Artwork and subtitles are left on disk. Removal affects the shared library; watching again requires reimporting.
                     </div>
                   </div>
-                </div>
-              </details>
               <div class="mrCard">
                 <h3>New episodes</h3>
                 <p class="sectionLead">Adds newly released episodes of saved Mediarow series in the background, so they show up in Next Up without opening the show.</p>
@@ -732,6 +722,16 @@
                   <h2 id="mrLanguageTitle" tabindex="-1">Language & subtitles</h2>
                   <p>Set audio and subtitle preferences for each user, with optional per-series choices.</p>
                 </div>
+              </div>
+              <div class="mrCard" id="originalLanguageSettings">
+                <h3>Original language</h3>
+<div class="checkboxContainer checkboxContainer-withDescription">
+                      <label> <input is="emby-checkbox" type="checkbox" id="chkPreferOriginalLanguageStreams" /> <span>Prefer original language</span> </label>
+                      <div class="fieldDescription">
+                        Moves AIOStreams results in the title's original language (for example English for Smallville) to the top, so they play by default, and selects the original-language audio track in multi-audio releases. Results tagged only with other languages (such as a Russian dub) move to the bottom. Unlabeled results keep their order.
+                      </div>
+                    </div>
+                <p class="fieldDescription">This is the default for AIOStreams playback. Enabled per-user language preferences below take priority.</p>
               </div>
               <div class="mrGrid">
                 <div class="mrCard">
