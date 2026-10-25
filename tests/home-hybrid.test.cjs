@@ -210,7 +210,8 @@ test('empty and failed rows keep category controls and report the outcome', asyn
             : fails ? Promise.reject(new Error('row unavailable')) : Promise.resolve({ Items: [] });
         const pendingLoad = harness.load();
         await pendingLoad;
-        assert.equal(harness.root().children[0].children.length, 3);
+        assert.equal(harness.root().children[0].children.length, 4);
+        assert.equal(harness.root().children[0].children[3].textContent, 'Customize');
         assert.equal(harness.rows().length, 0);
         assert.equal(harness.root().children[1].hidden, false);
         if (fails) {
@@ -273,11 +274,23 @@ test('fetch playback resolver retains HTTP status and error response for the UI'
         fetch: async () => ({ ok: false, status: 400,
             text: async () => JSON.stringify({ Error: 'Enable persistence.' }) })
     });
-    vm.runInContext(source.slice(source.indexOf('    function resolvePlaybackItem('),
+    vm.runInContext(source.slice(source.indexOf('    function sendJson('),
         source.indexOf('    function openResolvedDetails(')), context);
     await assert.rejects(context.resolvePlaybackItem({ getUrl: url => url }, 'title'), error => {
         assert.equal(error.status, 400);
         assert.equal(JSON.parse(error.responseText).Error, 'Enable persistence.');
         return true;
     });
+});
+
+test('admin catalog rows sit on Home once, unsuffixed, and do not use a genre slot', () => {
+    const withCatalog = [...sections, { Id: 'MediarowCatalog_c1', DisplayTitle: 'Top Rated Horror Movies', Order: 0.5 }];
+    const rows = project(withCatalog, ['Movies', 'Series'], 'Home');
+    const catalogRows = rows.filter(row => row.Id === 'MediarowCatalog_c1');
+    assert.equal(catalogRows.length, 1);
+    assert.equal(catalogRows[0].DisplayTitle, 'Top Rated Horror Movies');
+    assert.equal(catalogRows[0].ContentCategory, null);
+    assert.equal(rows.filter(row => row.AdditionalData).length, 6);
+    const seriesView = project(withCatalog, ['Movies', 'Series'], 'Series');
+    assert.equal(seriesView.find(row => row.Id === 'MediarowCatalog_c1').DisplayTitle, 'Top Rated Horror Movies');
 });

@@ -60,8 +60,25 @@ public sealed class AioStreamsPlaybackFilter(
                     }
                     else if (!candidates.Any(source => source.Id.Equals(selected, StringComparison.OrdinalIgnoreCase)))
                     {
-                        context.Result = new BadRequestObjectResult(new { Error = "The selected stream expired or is unavailable. Reload the title." });
-                        return;
+                        // The cached addon list may predate the client's choice (or its link expired): refresh once.
+                        var refreshed = await provider.FindSourceAsync(item, selected, context.HttpContext.RequestAborted);
+                        if (refreshed != null)
+                        {
+                            candidates = (await provider.GetMediaSources(item, context.HttpContext.RequestAborted)).ToArray();
+                        }
+
+                        if (refreshed == null || !candidates.Any(source => source.Id.Equals(selected, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            if (candidates.Length == 0)
+                            {
+                                context.Result = new NotFoundObjectResult(new { Error = "No playable HTTP streams were returned for this title." });
+                                return;
+                            }
+
+                            logger.LogInformation("[Mediarow] Selected stream {SourceId} is no longer offered for item {ItemId}; using the best available stream", selected, itemId);
+                            context.ActionArguments["mediaSourceId"] = candidates[0].Id;
+                            body?.GetType().GetProperty("MediaSourceId")?.SetValue(body, candidates[0].Id);
+                        }
                     }
 
                     // Negotiate with real tracks in this request, not a later client-specific live-stream request.

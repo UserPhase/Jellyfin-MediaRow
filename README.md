@@ -76,11 +76,27 @@ If the plugin does not appear, open the repository URL in a browser: it must ret
    - **AIOStreams**: Enter your AIOStreams addon URL
    - **Direct**: Configure URL templates
    - **Embedarr**: Enter your Embedarr instance URL
-4. Enable **Persistence** for native AIOStreams playback; leave it off for virtual browsing only.
+4. Under **Library & cleanup**, enable **library integration** for native AIOStreams playback; leave it off for virtual browsing only.
 5. Save and restart Jellyfin
 6. Search for any movie or TV show - results will include virtual items from the configured sources
 
 ## Features
+
+### Keep only what you save
+
+Under **Library & cleanup**, enable **Remove unsaved titles** and choose a grace period (default five minutes). The server removes idle, indexed Mediarow STRM/NFO files and library entries after browsing or playback; video files are not downloaded. Use Jellyfin's Favorite heart to retain a movie, series, season, or episode. A favorite from any user keeps the shared title. Active/paused playback, imports, and scans are protected.
+
+Cleanup checks approximately once a minute, based on the last title activity reported by the client. An idle details page may expire because clients do not consistently report leaving it. Artwork and subtitles remain. This policy takes priority over watched-item cleanup. The standard server requests used by Jellyfin Media Player and Android TV renew activity; no client extension is required.
+
+The Hide watched option uses a per-user movie identity index, including explicit mark-unwatched changes, retained in one compact `movie-watch-history.json` file. Removing temporary entries therefore preserves known watched identities. Previously deleted items with ambiguous numeric provider keys cannot be reconstructed reliably. Rows can be shorter or empty when most candidates are watched.
+
+### Settings in Jellyfin Media Player
+
+Sign in to the server with a Jellyfin administrator account, then open **User menu → Dashboard → Plugins → Jellyfin Mediarow**. Jellyfin Media Player loads the same server-provided configuration page as Jellyfin Web; no separate desktop plugin is required ([client documentation](https://github.com/jellyfin/jellyfin-media-player/blob/v1.11.1/README.md)).
+
+The page has five sections: **Connections**, **Home rows**, **Library & cleanup**, **Language & subtitles**, and **Advanced & diagnostics**. All active server settings are editable here, including catalog rows, exact library paths, stream recovery, new-episode checks, per-user audio/subtitle priorities, remembered series choices, playback correction, and skip buttons. Expand the relevant provider or advanced section to edit it. Saving retains other users' preferences and settings belonging to inactive providers.
+
+Use **Save settings** before running diagnostics or checking for new episodes; those actions use the saved server configuration. Server settings require administrator access. Personal Home options, including **Hide watched** and **Not interested**, are available through the Home preferences controls in the server-hosted web interface used by Jellyfin Media Player.
 
 ### Home row layout
 - Home is a hybrid feed: separate Popular Movies and Popular Series rows, Continue Watching if enabled, and up to six selected genre rows interleaved across enabled categories in your configured genre order. Anime joins the rotation when enabled.
@@ -515,7 +531,7 @@ dotnet build Jellyfin.Plugin.Mediarow/Jellyfin.Plugin.Mediarow.csproj -c Release
 
 ```bash
 dotnet test tests/Jellyfin.Plugin.Mediarow.Tests/Jellyfin.Plugin.Mediarow.Tests.csproj
-node --test tests/home-layout.test.cjs tests/home-carousel.test.cjs tests/home-hybrid.test.cjs
+node --test tests/home-layout.test.cjs tests/home-carousel.test.cjs tests/home-hybrid.test.cjs tests/home-preferences.test.cjs tests/next-episode.test.cjs
 ```
 
 To try it in Jellyfin, copy `Jellyfin.Plugin.Mediarow/bin/Release/net10.0/Jellyfin.Plugin.Mediarow.dll` into `<jellyfin data>/plugins/Mediarow/` and restart Jellyfin.

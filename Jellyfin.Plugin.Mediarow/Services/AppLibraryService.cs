@@ -14,18 +14,18 @@ public sealed class AppLibraryService
 {
     private readonly HomeSectionManager _manager;
     private readonly HomeSectionBootstrapper _bootstrapper;
-    private readonly HomeSectionUserSettingsStore _userSettings;
+    private readonly UserPreferenceFilter _preferences;
     private readonly IServerApplicationHost _serverApplicationHost;
 
     public AppLibraryService(
         HomeSectionManager manager,
         HomeSectionBootstrapper bootstrapper,
-        HomeSectionUserSettingsStore userSettings,
+        UserPreferenceFilter preferences,
         IServerApplicationHost serverApplicationHost)
     {
         _manager = manager;
         _bootstrapper = bootstrapper;
-        _userSettings = userSettings;
+        _preferences = preferences;
         _serverApplicationHost = serverApplicationHost;
     }
 
@@ -43,11 +43,12 @@ public sealed class AppLibraryService
         }
 
         _bootstrapper.RegisterConfiguredSections();
-        IReadOnlySet<string>? enabled = userId == Guid.Empty ? null : _userSettings.Get(userId);
-        IEnumerable<IHomeSection> sections = _manager.GetSections()
-            .OfType<VirtualCatalogHomeSection>()
-            .Where(section => enabled == null || enabled.Contains(section.Id));
-        return AppLibraryLayout.Project(sections, HomeRowContentFilter.GetCategories(Config));
+        // Hidden rows are dropped and the user's row order becomes the library order.
+        IReadOnlyList<IHomeSection> sections = _preferences.ArrangeSections(
+            userId,
+            _manager.GetSections().OfType<VirtualCatalogHomeSection>(),
+            section => section.Id);
+        return AppLibraryLayout.Project(sections, HomeRowContentFilter.GetCategories(Config), preserveOrder: true);
     }
 
     public AppLibraryDefinition? Find(Guid userId, Guid libraryId)

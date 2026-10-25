@@ -3,6 +3,7 @@ using Jellyfin.Plugin.Mediarow.Configuration;
 using Jellyfin.Plugin.Mediarow.Models;
 using MediaBrowser.Model.Dto;
 using Microsoft.Extensions.Logging;
+using System.Text.RegularExpressions;
 
 namespace Jellyfin.Plugin.Mediarow.Services;
 
@@ -25,7 +26,7 @@ public class SubtitleService
         _logger = logger;
     }
 
-    private PluginConfiguration Config => MediarowPlugin.Instance?.Configuration ?? new PluginConfiguration();
+    protected virtual PluginConfiguration Config => MediarowPlugin.Instance?.Configuration ?? new PluginConfiguration();
 
     /// <summary>
     /// Check if subtitles are enabled and configured.
@@ -286,6 +287,9 @@ public class SubtitleService
     /// </summary>
     public async Task<string?> GetSubtitleContentAsync(Guid itemId, string languageCode, CancellationToken cancellationToken = default)
     {
+        // Only language/region/index tokens are accepted; none can introduce a path separator.
+        var match = Regex.Match(languageCode ?? "", @"^(?<language>[A-Za-z]{2,3})(?<region>[-_][A-Za-z]{2,4})?(?<index>_[0-9]{1,6})?$", RegexOptions.CultureInvariant);
+        if (string.IsNullOrEmpty(languageCode) || !match.Success) return null;
         _logger.LogDebug("[SubtitleService] GetSubtitleContent request: ItemId={ItemId}, Language={Language}", itemId, languageCode);
 
         // First try the memory cache
@@ -308,20 +312,16 @@ public class SubtitleService
         }
 
         // Fall back to checking disk directly (handles cache expiration)
-        var normalizedLanguage = SubtitleConverter.NormalizeLanguageCode(languageCode);
+        var normalizedLanguage = SubtitleConverter.NormalizeLanguageCode(match.Groups["language"].Value) +
+            match.Groups["region"].Value.ToLowerInvariant() + match.Groups["index"].Value;
         var cachePath = GetSubtitleCachePath();
-        var expectedFilePath = Path.Combine(cachePath, $"{itemId}_{normalizedLanguage}.vtt");
-
-        _logger.LogDebug("[SubtitleService] Checking disk fallback: {Path}", expectedFilePath);
-
-        if (File.Exists(expectedFilePath))
+        foreach (var language in new[] { languageCode!.ToLowerInvariant(), normalizedLanguage }.Distinct(StringComparer.Ordinal))
         {
-            _logger.LogDebug("[SubtitleService] Found subtitle on disk (cache miss recovery): {Path}", expectedFilePath);
-            return await File.ReadAllTextAsync(expectedFilePath, cancellationToken);
+            var expectedFilePath = Path.Combine(cachePath, $"{itemId}_{language}.vtt");
+            if (File.Exists(expectedFilePath)) return await File.ReadAllTextAsync(expectedFilePath, cancellationToken);
         }
 
-        _logger.LogInformation("[SubtitleService] Subtitle not found in cache or on disk: {ItemId}, {Language}, ExpectedPath={Path}",
-            itemId, languageCode, expectedFilePath);
+        _logger.LogDebug("[SubtitleService] Subtitle not found in cache or on disk: {ItemId}, {Language}", itemId, languageCode);
         return null;
     }
 }

@@ -22,19 +22,15 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Restore dependencies
         run: dotnet restore tests/Jellyfin.Plugin.Mediarow.Tests/Jellyfin.Plugin.Mediarow.Tests.csproj
 
-      - name: Build
-        run: dotnet build Jellyfin.Plugin.Mediarow/Jellyfin.Plugin.Mediarow.csproj -c Release --no-restore
-
-      - name: Test
-        run: dotnet test tests/Jellyfin.Plugin.Mediarow.Tests/Jellyfin.Plugin.Mediarow.Tests.csproj -c Release --no-restore
-
-      - name: Test Home browser behavior
-        run: node --test tests/home-layout.test.cjs tests/home-carousel.test.cjs tests/home-hybrid.test.cjs
-
-      - name: Create plugin package
+      - name: Determine version
         run: |
           # Use tag version for releases, csproj version otherwise
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
@@ -43,6 +39,23 @@ jobs:
             VERSION=$(grep -oPm1 "(?<=<Version>)[^<]+" Jellyfin.Plugin.Mediarow/Jellyfin.Plugin.Mediarow.csproj)
           fi
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
+
+      # Jellyfin shows the DLL's assembly version, so it must match the released version.
+      - name: Build
+        run: dotnet build Jellyfin.Plugin.Mediarow/Jellyfin.Plugin.Mediarow.csproj -c Release --no-restore -p:Version=${VERSION} -p:AssemblyVersion=${VERSION}.0 -p:FileVersion=${VERSION}.0
+
+      - name: Test
+        run: dotnet test tests/Jellyfin.Plugin.Mediarow.Tests/Jellyfin.Plugin.Mediarow.Tests.csproj -c Release --no-restore -p:Version=${VERSION} -p:AssemblyVersion=${VERSION}.0 -p:FileVersion=${VERSION}.0
+
+      - name: Test Home browser behavior
+        run: node --test tests/home-layout.test.cjs tests/home-carousel.test.cjs tests/home-hybrid.test.cjs tests/home-preferences.test.cjs tests/next-episode.test.cjs
+
+      - name: Create plugin package
+        run: |
+          ACTUAL=$(pwsh -NoProfile -Command "[Reflection.AssemblyName]::GetAssemblyName('Jellyfin.Plugin.Mediarow/bin/Release/net10.0/Jellyfin.Plugin.Mediarow.dll').Version.ToString()")
+          if [ "$ACTUAL" != "${VERSION}.0" ]; then
+            echo "DLL version $ACTUAL does not match release ${VERSION}.0"; exit 1
+          fi
 
           mkdir -p artifacts/Mediarow
           cp Jellyfin.Plugin.Mediarow/bin/Release/net10.0/Jellyfin.Plugin.Mediarow.dll artifacts/Mediarow/

@@ -39,27 +39,17 @@ public class CacheCleanupTask : IScheduledTask
         {
             progress.Report(10);
 
-            // MemoryCache automatically removes expired entries, but we can
-            // trigger a compaction to aggressively reclaim memory
+            // Trigger lazy expiration only for plugin-owned metadata. Never compact the
+            // server's shared cache or touch live source/probe/relay capabilities.
             if (_cache is MemoryCache memoryCache)
             {
-                // Get current stats before cleanup
-                var statsBefore = memoryCache.Count;
-                _logger.LogDebug("Cache entries before cleanup: {Count}", statsBefore);
-
-                progress.Report(30);
-
-                // Compact 25% of the cache - this removes least recently used entries
-                memoryCache.Compact(0.25);
-
-                progress.Report(80);
-
-                var statsAfter = memoryCache.Count;
-                _logger.LogInformation(
-                    "Cache cleanup completed. Entries before: {Before}, after: {After}, removed: {Removed}",
-                    statsBefore,
-                    statsAfter,
-                    statsBefore - statsAfter);
+                var keys = memoryCache.Keys.OfType<string>().Where(IsMetadataKey).ToArray();
+                foreach (var key in keys)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    _cache.TryGetValue(key, out _);
+                }
+                _logger.LogInformation("Checked expiration of {Count} Mediarow metadata entries", keys.Length);
             }
             else
             {
@@ -80,6 +70,17 @@ public class CacheCleanupTask : IScheduledTask
 
         return Task.CompletedTask;
     }
+
+    private static bool IsMetadataKey(string key) =>
+        key.StartsWith("mediarow-home:", StringComparison.Ordinal) ||
+        key.StartsWith("mediarow-home-section:", StringComparison.Ordinal) ||
+        key.StartsWith("mediarow-discovery:", StringComparison.Ordinal) ||
+        key.StartsWith("mediarow-visibility:", StringComparison.Ordinal) ||
+        key.StartsWith("dynamic_item:", StringComparison.Ordinal) ||
+        key.StartsWith("dynamic_seasons:", StringComparison.Ordinal) ||
+        key.StartsWith("dynamic_episodes:", StringComparison.Ordinal) ||
+        key.StartsWith("dynamic_image:", StringComparison.Ordinal) ||
+        key.StartsWith("dynamic_backdrop:", StringComparison.Ordinal);
 
     /// <inheritdoc />
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()

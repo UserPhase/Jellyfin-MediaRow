@@ -1,26 +1,22 @@
-using Jellyfin.Plugin.Mediarow.Api;
-using Jellyfin.Plugin.Mediarow.Configuration;
+﻿using Jellyfin.Plugin.Mediarow.Models;
+using Jellyfin.Plugin.Mediarow.Services;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.Mediarow.ScheduledTasks;
 
 /// <summary>
-/// Scheduled task that verifies API connectivity to configured providers.
+/// Runs the configuration diagnostics periodically (without the slow ffprobe step) and logs problems, so a dead
+/// addon, rejected key or unwritable folder shows up in the log before users report playback failures.
 /// </summary>
 public class ApiHealthCheckTask : IScheduledTask
 {
-    private readonly ITvdbClient _tvdbClient;
-    private readonly ITmdbClient _tmdbClient;
+    private readonly PluginDiagnosticsService _diagnostics;
     private readonly ILogger<ApiHealthCheckTask> _logger;
 
-    public ApiHealthCheckTask(
-        ITvdbClient tvdbClient,
-        ITmdbClient tmdbClient,
-        ILogger<ApiHealthCheckTask> logger)
+    public ApiHealthCheckTask(PluginDiagnosticsService diagnostics, ILogger<ApiHealthCheckTask> logger)
     {
-        _tvdbClient = tvdbClient;
-        _tmdbClient = tmdbClient;
+        _diagnostics = diagnostics;
         _logger = logger;
     }
 
@@ -28,10 +24,10 @@ public class ApiHealthCheckTask : IScheduledTask
     public string Key => "MediarowApiHealthCheck";
 
     /// <inheritdoc />
-    public string Name => "Mediarow: API Health Check";
+    public string Name => "Mediarow: Configuration Health Check";
 
     /// <inheritdoc />
-    public string Description => "Verifies connectivity to TVDB and TMDB APIs and refreshes authentication tokens.";
+    public string Description => "Tests the AIOStreams addon, stream links, metadata API keys, FFmpeg and folders, and logs any problems.";
 
     /// <inheritdoc />
     public string Category => "Mediarow";
@@ -39,95 +35,35 @@ public class ApiHealthCheckTask : IScheduledTask
     /// <inheritdoc />
     public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Starting Mediarow API health check");
-
-        var config = MediarowPlugin.Instance?.Configuration;
-        if (config == null)
+        progress.Report(0);
+        var report = await _diagnostics.TryRunAsync(new DiagnosticsOptions { ProbeStream = false }, cancellationToken).ConfigureAwait(false);
+        if (report == null)
         {
-            _logger.LogWarning("Plugin configuration not available");
+            _logger.LogInformation("[Mediarow] Health check skipped: a configuration test is already running");
             progress.Report(100);
             return;
         }
 
-        var totalChecks = 2;
-        var completedChecks = 0;
-
-        try
+        foreach (var check in report.Checks.Where(check => check.Status is DiagnosticStatus.Fail or DiagnosticStatus.Warning))
         {
-            // Check TVDB
-            if (!string.IsNullOrEmpty(config.TvdbApiKey) && config.TvShowApiSource == ApiSource.Tvdb)
-            {
-                _logger.LogDebug("Checking TVDB API connectivity...");
-                try
-                {
-                    // Attempt a simple search to verify connectivity
-                    var results = await _tvdbClient.SearchSeriesAsync("test", cancellationToken);
-                    _logger.LogInformation("TVDB API check passed - connection successful");
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "TVDB API check failed");
-                }
-            }
-            else
-            {
-                _logger.LogDebug("TVDB not configured, skipping health check");
-            }
-
-            completedChecks++;
-            progress.Report((double)completedChecks / totalChecks * 100);
-
-            if (cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
-
-            // Check TMDB
-            if (!string.IsNullOrEmpty(config.TmdbApiKey) && config.MovieApiSource == ApiSource.Tmdb)
-            {
-                _logger.LogDebug("Checking TMDB API connectivity...");
-                try
-                {
-                    // Attempt a simple search to verify connectivity
-                    var results = await _tmdbClient.SearchMoviesAsync("test", cancellationToken);
-                    _logger.LogInformation("TMDB API check passed - connection successful");
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "TMDB API check failed");
-                }
-            }
-            else
-            {
-                _logger.LogDebug("TMDB not configured, skipping health check");
-            }
-
-            completedChecks++;
-            progress.Report(100);
-
-            _logger.LogInformation("Mediarow API health check completed");
+            _logger.Log(
+                check.Status == DiagnosticStatus.Fail ? LogLevel.Warning : LogLevel.Information,
+                "[Mediarow] Health check {Status}: {Name} - {Message}",
+                check.Status,
+                check.Name,
+                check.Message);
         }
-        catch (OperationCanceledException)
-        {
-            _logger.LogInformation("API health check task was cancelled");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error during API health check");
-        }
+
+        progress.Report(100);
     }
 
     /// <inheritdoc />
-    public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
-    {
-        // Run every 12 hours to keep tokens fresh
-        return new[]
+    public IEnumerable<TaskTriggerInfo> GetDefaultTriggers() =>
+    [
+        new TaskTriggerInfo
         {
-            new TaskTriggerInfo
-            {
-                Type = TaskTriggerInfoType.IntervalTrigger,
-                IntervalTicks = TimeSpan.FromHours(12).Ticks
-            }
-        };
-    }
+            Type = TaskTriggerInfoType.IntervalTrigger,
+            IntervalTicks = TimeSpan.FromHours(12).Ticks
+        }
+    ];
 }

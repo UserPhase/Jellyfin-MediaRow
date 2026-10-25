@@ -24,6 +24,7 @@ public class MediarowController : ControllerBase
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<MediarowController> _logger;
     private readonly PlaybackItemResolver _playbackResolver;
+    private readonly UserPermissionGuard _guard;
 
     public MediarowController(
         DynamicItemCache itemCache,
@@ -32,8 +33,10 @@ public class MediarowController : ControllerBase
         IHttpClientFactory httpClientFactory,
         ILogger<MediarowController> logger,
         PlaybackItemResolver playbackResolver,
-        IMemoryCache memoryCache)
+        IMemoryCache memoryCache,
+        UserPermissionGuard guard)
     {
+        _guard = guard;
         _itemCache = itemCache;
         _subtitleService = subtitleService;
         _persistenceService = persistenceService;
@@ -64,8 +67,14 @@ public class MediarowController : ControllerBase
             return NotFound();
         }
 
+        UserAccessResult access = _guard.Resolve(User);
+        if (!access.Succeeded || !_guard.CanView(access.Context!, item))
+        {
+            return NotFound();
+        }
+
         _logger.LogDebug("[Mediarow] Returning cached item: {Name} ({Id})", item.Name, itemId);
-        return Ok(item);
+        return Ok(VirtualItemProjection.WithoutUserData(item));
     }
 
     /// <summary>

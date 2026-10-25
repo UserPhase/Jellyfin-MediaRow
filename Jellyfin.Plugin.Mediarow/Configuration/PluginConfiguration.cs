@@ -186,6 +186,12 @@ public class PluginConfiguration : BasePluginConfiguration
     public string AIOStreamsUrl { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets whether every AIOStreams stream is relayed through this server so expired debrid links are
+    /// re-resolved mid-playback (401/403/404) and transient upstream errors are retried. Costs direct play: clients
+    /// stream through Jellyfin instead of straight from the debrid host.
+    /// </summary>
+    public bool EnableStreamRecovery { get; set; } = true;
+    /// <summary>
     /// Gets or sets whether to probe HLS streams for accurate duration.
     /// When enabled, fetches m3u8 playlists to determine exact runtime.
     /// This helps with scrubbing on Android TV and other players.
@@ -456,9 +462,37 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public bool CheckForUpdatesOnView { get; set; } = true;
 
+    /// <summary>
+    /// Gets or sets whether the scheduled episode sync adds newly aired episodes to persisted series,
+    /// so they reach Jellyfin's native Next Up without anyone opening the show.
+    /// </summary>
+    public bool EnableEpisodeSync { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets the minimum hours between checks of a continuing series without a known next air date.
+    /// </summary>
+    public int EpisodeSyncIntervalHours { get; set; } = 6;
+
+    /// <summary>
+    /// Gets or sets how many series the episode sync checks at the same time.
+    /// </summary>
+    public int EpisodeSyncConcurrency { get; set; } = 3;
+
     public bool CleanupWatchedMovies { get; set; } = false;
 
     public bool CleanupCompletedSeries { get; set; } = false;
+
+    /// <summary>Remove idle generated titles unless any user has favorited them.</summary>
+    public bool CleanupUnsavedItems { get; set; } = false;
+
+    private int _unsavedItemGraceMinutes = 5;
+
+    /// <summary>Minutes of inactivity before cleanup; checked approximately once a minute.</summary>
+    public int UnsavedItemGraceMinutes
+    {
+        get => _unsavedItemGraceMinutes;
+        set => _unsavedItemGraceMinutes = Math.Clamp(value, 1, 10080);
+    }
 
     // ==================== Virtual Home Rows ====================
 
@@ -530,4 +564,10 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets generic configurable Home section definitions.
     /// </summary>
     public List<HomeSectionDefinition> HomeSections { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets admin-selected catalog rows (explicit Stremio catalogs or structured TMDB discovery).
+    /// Their order and visibility are stored with the other rows in <see cref="HomeSections"/>.
+    /// </summary>
+    public List<Models.HomeCatalogSelection> HomeCatalogs { get; set; } = new();
 }

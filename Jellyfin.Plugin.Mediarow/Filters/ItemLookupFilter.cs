@@ -35,6 +35,8 @@ public class ItemLookupFilter : IAsyncActionFilter, IOrderedFilter
     private readonly DynamicAioStreamsMediaSourceProvider _nativeAioProvider;
     private readonly IMediaSourceManager _mediaSourceManager;
     private readonly PlaybackItemResolver _playbackResolver;
+    private readonly UserPermissionGuard _guard;
+    private readonly EpisodeSyncService _episodeSync;
 
     // Action names that look up individual items
     // UserLibrary.GetItem = /Users/{userId}/Items/{itemId}
@@ -67,8 +69,12 @@ public class ItemLookupFilter : IAsyncActionFilter, IOrderedFilter
         ILogger<ItemLookupFilter> logger,
         DynamicAioStreamsMediaSourceProvider nativeAioProvider,
         IMediaSourceManager mediaSourceManager,
-        PlaybackItemResolver playbackResolver)
+        PlaybackItemResolver playbackResolver,
+        UserPermissionGuard guard,
+        EpisodeSyncService episodeSync)
     {
+        _guard = guard;
+        _episodeSync = episodeSync;
         _itemCache = itemCache;
         _searchResultFactory = searchResultFactory;
         _mediarowService = mediarowService;
@@ -130,15 +136,29 @@ public class ItemLookupFilter : IAsyncActionFilter, IOrderedFilter
             return;
         }
 
-        // Try to get the user ID from the action arguments (for UserLibrary endpoints)
-        Guid? userId = null;
-        if (context.ActionArguments.TryGetValue("userId", out var userIdObj) && userIdObj is Guid extractedUserId)
+        // The user comes from the access token. A different userId argument is only honored for administrators;
+        // otherwise Jellyfin's own action handles (and rejects) the request.
+        Guid requestedUserId = context.ActionArguments.TryGetValue("userId", out var userIdObj) && userIdObj is Guid extractedUserId
+            ? extractedUserId
+            : Guid.Empty;
+        UserAccessResult access = _guard.Resolve(context.HttpContext.User, requestedUserId);
+        if (!access.Succeeded)
         {
-            userId = extractedUserId;
+            await next();
+            return;
         }
+
+        UserSessionContext session = access.Context!;
+        Guid? userId = session.UserId;
 
         // Check if this is a dynamic item in our cache
         var cachedItem = _itemCache.GetItem(itemId);
+        if (cachedItem != null && SearchResultFactory.IsDynamicItem(cachedItem) && !_guard.CanView(session, cachedItem))
+        {
+            context.Result = new NotFoundResult();
+            return;
+        }
+
         var requestedMediaSourceId = (string?)null;
 
         var playbackConfig = MediarowPlugin.Instance?.Configuration;
@@ -185,7 +205,7 @@ public class ItemLookupFilter : IAsyncActionFilter, IOrderedFilter
                 {
                     directLibraryItem = _libraryManager.GetItemById(aioMapping.ItemId);
                     if (directLibraryItem == null || !_nativeAioProvider.IsMediarowItem(directLibraryItem) ||
-                        !(await _nativeAioProvider.GetMediaSources(directLibraryItem, context.HttpContext.RequestAborted)).Any(source => source.Id == mediaSourceIdStr))
+                        await _nativeAioProvider.FindSourceAsync(directLibraryItem, mediaSourceIdStr, context.HttpContext.RequestAborted) == null)
                     {
                         _logger.LogWarning("[Mediarow] Stream alias {SourceId} is unavailable", mediaSourceIdStr);
                         context.Result = new NotFoundObjectResult(new { Error = "The selected stream expired. Reload the title." });
@@ -214,6 +234,12 @@ public class ItemLookupFilter : IAsyncActionFilter, IOrderedFilter
 
                 // Try cache first (for dynamic items)
                 cachedItem = _itemCache.GetItem(episodeId.Value);
+                if (cachedItem != null && !_guard.CanView(session, cachedItem))
+                {
+                    context.Result = new NotFoundResult();
+                    return;
+                }
+
                 requestedMediaSourceId = mediaSourceIdStr;
 
                 // If not in cache, check if it's a persisted anime episode in the library
@@ -372,6 +398,7 @@ public class ItemLookupFilter : IAsyncActionFilter, IOrderedFilter
         }
 
         // If this was a MediaSource ID lookup, filter to only that MediaSource
+        MediaSourceInfo[]? selectedSources = null;
         if (!string.IsNullOrEmpty(requestedMediaSourceId) && cachedItem.MediaSources != null)
         {
             var selectedSource = cachedItem.MediaSources.FirstOrDefault(s => s.Id == requestedMediaSourceId);
@@ -379,7 +406,7 @@ public class ItemLookupFilter : IAsyncActionFilter, IOrderedFilter
             {
                 _logger.LogDebug("[Mediarow] Filtering to requested MediaSource: {Name} ({Id})",
                     selectedSource.Name, selectedSource.Id);
-                cachedItem.MediaSources = new[] { selectedSource };
+                selectedSources = new[] { selectedSource };
             }
         }
 
@@ -422,16 +449,20 @@ public class ItemLookupFilter : IAsyncActionFilter, IOrderedFilter
                 _ = TriggerSeriesUpdateAsync(cachedItem);
             }
         }
-        else if (cachedItem.Type == BaseItemKind.Episode)
+
+        // Enrichment above only adds shared metadata to the cache entry. Everything below is request- or
+        // user-specific, so it goes on a private copy and the shared instance is never mutated.
+        cachedItem = VirtualItemProjection.WithoutUserData(cachedItem);
+        if (selectedSources != null)
         {
-            // Virtual-only items remain browse-only until they have a native library identity.
-            if (config?.StreamProvider == StreamProvider.AIOStreams) cachedItem.MediaSources = [];
+            cachedItem.MediaSources = selectedSources;
         }
 
-        // For movies, also populate AIOStreams MediaSources if configured (after enrichment)
-        if (cachedItem.Type == BaseItemKind.Movie)
+        // Virtual-only items remain browse-only until they have a native library identity.
+        if (cachedItem.Type is BaseItemKind.Episode or BaseItemKind.Movie &&
+            config?.StreamProvider == StreamProvider.AIOStreams)
         {
-            if (config?.StreamProvider == StreamProvider.AIOStreams) cachedItem.MediaSources = [];
+            cachedItem.MediaSources = [];
         }
 
         // For persisted items also in cache, use real UserData from database.
@@ -462,11 +493,7 @@ public class ItemLookupFilter : IAsyncActionFilter, IOrderedFilter
             }
             else
             {
-                var trackedUserData = _virtualResumeTracker.GetUserData(userId.Value, itemId);
-                if (trackedUserData != null)
-                {
-                    cachedItem.UserData = trackedUserData;
-                }
+                cachedItem.UserData = _virtualResumeTracker.GetUserData(userId.Value, itemId);
             }
         }
 
@@ -630,53 +657,12 @@ public class ItemLookupFilter : IAsyncActionFilter, IOrderedFilter
     {
         try
         {
-            // Check if this series has .strm files (indicating it's from our plugin)
-            var episodes = series.GetRecursiveChildren().OfType<Episode>().ToList();
-            if (episodes.Count == 0)
-            {
-                return;
-            }
-
-            var firstEpisode = episodes.FirstOrDefault();
-            if (firstEpisode?.Path == null || !firstEpisode.Path.EndsWith(".strm", StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
-            // Read .strm content to verify it's ours
-            if (!File.Exists(firstEpisode.Path))
-            {
-                return;
-            }
-
-            var strmContent = await File.ReadAllTextAsync(firstEpisode.Path, cancellationToken);
-            if (!StrmMarker.IsMarker(strmContent))
-            {
-                return;
-            }
-
-            _logger.LogDebug("[Mediarow] Checking persisted series for updates: {Name}", series.Name);
-
-            // Convert to BaseItemDto for the persistence service
-            var seriesDto = new BaseItemDto
-            {
-                Id = series.Id,
-                Name = series.Name,
-                Type = BaseItemKind.Series,
-                ProductionYear = series.ProductionYear,
-                ProviderIds = series.ProviderIds,
-                Genres = series.Genres
-            };
-
-            // Fetch fresh episode data and update
-            var enrichedSeries = await _searchResultFactory.EnrichSeriesDtoAsync(seriesDto, cancellationToken);
-
-            var newCount = await _persistenceService.UpdateSeriesAsync(enrichedSeries);
-            if (newCount > 0)
+            // Shares the background sync's per-series lock, delta state and direct import (no full library scan).
+            var result = await _episodeSync.SyncSeriesAsync(series, EpisodeSyncTrigger.PageOpen, cancellationToken);
+            if (result is { NewEpisodes: > 0 })
             {
                 _logger.LogInformation("[Mediarow] Added {Count} new episodes for persisted series: {Name}",
-                    newCount, series.Name);
-                _persistenceService.TriggerLibraryScan();
+                    result.NewEpisodes, series.Name);
             }
         }
         catch (Exception ex)

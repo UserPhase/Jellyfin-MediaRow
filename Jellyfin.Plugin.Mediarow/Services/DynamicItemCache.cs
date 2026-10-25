@@ -46,8 +46,9 @@ public class DynamicItemCache
             return;
         }
 
+        // Cached catalog DTOs are shared by every user, so they must never carry user state.
         var itemKey = $"{ItemPrefix}{item.Id}";
-        _cache.Set(itemKey, item, _cacheDuration);
+        _cache.Set(itemKey, item.UserData == null ? item : VirtualItemProjection.WithoutUserData(item), _cacheDuration);
 
         if (!string.IsNullOrEmpty(imageUrl))
         {
@@ -66,12 +67,22 @@ public class DynamicItemCache
     }
 
     /// <summary>
-    /// Get a dynamic item from the cache.
+    /// Get a dynamic item from the cache. The instance is shared across users; use
+    /// <see cref="GetItemForUser"/> for anything that is returned to a client or carries user state.
     /// </summary>
     public BaseItemDto? GetItem(Guid itemId)
     {
         var key = $"{ItemPrefix}{itemId}";
         return _cache.TryGetValue<BaseItemDto>(key, out var item) ? item : null;
+    }
+
+    /// <summary>
+    /// Get a per-user copy of a cached item; mutating it never affects the shared cache entry.
+    /// </summary>
+    public BaseItemDto? GetItemForUser(Guid itemId, UserItemDataDto? userData)
+    {
+        var item = GetItem(itemId);
+        return item == null ? null : VirtualItemProjection.ForUser(item, userData);
     }
 
     /// <summary>

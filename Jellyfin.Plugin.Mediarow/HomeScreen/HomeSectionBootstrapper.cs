@@ -1,4 +1,5 @@
 using Jellyfin.Plugin.Mediarow.Configuration;
+using Jellyfin.Plugin.Mediarow.Models;
 using Jellyfin.Plugin.Mediarow.Services;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
@@ -56,7 +57,7 @@ public sealed class HomeSectionBootstrapper
         PluginConfiguration config = MediarowPlugin.Instance?.Configuration ?? new PluginConfiguration();
         IReadOnlyList<string> categories = HomeRowContentFilter.GetCategories(config);
         var work = _manager.GetSections()
-            .OfType<VirtualCatalogHomeSection>()
+            .Where(section => section is VirtualCatalogHomeSection or DiscoveryCatalogHomeSection)
             .Where(section => section.Enabled)
             .SelectMany(section => categories.Select(category => (Section: section, Category: category)))
             .ToList();
@@ -90,6 +91,14 @@ public sealed class HomeSectionBootstrapper
                 {
                     sections.Add(CreateContinueWatching(config, definition));
                 }
+                else if (definition.Id.StartsWith(HomeCatalogSelection.SectionPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    HomeCatalogSelection? selection = FindCatalog(config, definition.Id);
+                    if (selection != null)
+                    {
+                        sections.Add(CreateDiscoverySection(selection, definition, config.EnableHomeRows));
+                    }
+                }
                 else
                 {
                     sections.Add(CreateCatalogSection(definition, config.EnableHomeRows));
@@ -102,6 +111,7 @@ public sealed class HomeSectionBootstrapper
                 sections.Add(CreateContinueWatching(config));
             }
 
+            AddUnorderedCatalogs(config, sections, config.HomeSections.Count);
             _manager.ReplaceSections(sections);
             _logger.LogInformation("[Mediarow] Registered {Count} configured internal Home sections", sections.Count);
             return;
@@ -140,8 +150,61 @@ public sealed class HomeSectionBootstrapper
             }));
         }
 
+        AddUnorderedCatalogs(config, sections, order);
         _manager.ReplaceSections(sections);
         _logger.LogInformation("[Mediarow] Registered {Count} internal virtual Home sections", _manager.GetSections().Count);
+    }
+
+    private static HomeCatalogSelection? FindCatalog(PluginConfiguration config, string sectionId)
+    {
+        return config.HomeCatalogs.FirstOrDefault(selection =>
+            !string.IsNullOrWhiteSpace(selection.Id) &&
+            selection.SectionId.Equals(sectionId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Catalogs added in the admin list but not yet ordered on the Home page go after the other rows.
+    /// </summary>
+    private void AddUnorderedCatalogs(PluginConfiguration config, List<IHomeSection> sections, int firstOrder)
+    {
+        var registered = new HashSet<string>(sections.Select(section => section.Id), StringComparer.OrdinalIgnoreCase);
+        var ordered = new HashSet<string>(config.HomeSections.Select(section => section.Id), StringComparer.OrdinalIgnoreCase);
+        int order = firstOrder;
+        foreach (HomeCatalogSelection selection in config.HomeCatalogs
+            .Where(selection => !string.IsNullOrWhiteSpace(selection.Id))
+            .OrderBy(selection => selection.Order))
+        {
+            if (registered.Contains(selection.SectionId) || ordered.Contains(selection.SectionId))
+            {
+                continue;
+            }
+
+            sections.Add(CreateDiscoverySection(selection, new HomeSectionDefinition
+            {
+                Id = selection.SectionId,
+                DisplayTitle = selection.Title,
+                Order = order++,
+                Limit = config.HomeRowItemCount,
+                Enabled = selection.Enabled
+            }, config.EnableHomeRows));
+            registered.Add(selection.SectionId);
+        }
+    }
+
+    private IHomeSection CreateDiscoverySection(HomeCatalogSelection selection, HomeSectionDefinition definition, bool homeRowsEnabled)
+    {
+        var effectiveDefinition = new HomeSectionDefinition
+        {
+            Id = selection.SectionId,
+            DisplayTitle = string.IsNullOrWhiteSpace(selection.Title) ? definition.DisplayTitle : selection.Title,
+            Order = definition.Order,
+            Limit = definition.Limit,
+            Route = definition.Route,
+            AdditionalData = definition.AdditionalData,
+            Enabled = definition.Enabled && selection.Enabled && homeRowsEnabled,
+            Parameters = definition.Parameters
+        };
+        return new DiscoveryCatalogHomeSection(_catalogService, selection, effectiveDefinition);
     }
 
     private IHomeSection CreateCatalogSection(HomeSectionDefinition definition, bool homeRowsEnabled = true)

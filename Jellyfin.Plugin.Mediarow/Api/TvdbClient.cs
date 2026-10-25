@@ -167,6 +167,12 @@ public class TvdbClient : ITvdbClient
         }
     }
 
+    /// <inheritdoc />
+    public void InvalidateSeries(int seriesId)
+    {
+        _cache.Remove($"{SeriesCachePrefix}{seriesId}");
+    }
+
     public async Task<TvdbSeriesExtended?> GetSeriesExtendedAsync(int seriesId, CancellationToken cancellationToken = default)
     {
         if (!IsConfigured)

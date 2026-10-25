@@ -73,7 +73,7 @@ public static class CatalogDuplicateFilter
         }
     }
 
-    private static IEnumerable<string> GetKeys(BaseItemKind kind, IReadOnlyDictionary<string, string>? providerIds)
+    public static IEnumerable<string> GetKeys(BaseItemKind kind, IReadOnlyDictionary<string, string>? providerIds)
     {
         if (providerIds is null || (kind != BaseItemKind.Movie && kind != BaseItemKind.Series))
         {

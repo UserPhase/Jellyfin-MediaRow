@@ -27,7 +27,8 @@ public static class AppLibraryLayout
 
     public static IReadOnlyList<AppLibraryDefinition> Project(
         IEnumerable<IHomeSection> sections,
-        IReadOnlyList<string> categories)
+        IReadOnlyList<string> categories,
+        bool preserveOrder = false)
     {
         var libraries = new List<AppLibraryDefinition>();
         if (categories.Count == 0)
@@ -36,7 +37,7 @@ public static class AppLibraryLayout
         }
 
         int genreIndex = 0;
-        foreach (IHomeSection section in sections.OrderBy(section => section.Order))
+        foreach (IHomeSection section in preserveOrder ? sections : sections.OrderBy(section => section.Order))
         {
             if (section.Id.Equals(ContinueWatchingId, StringComparison.OrdinalIgnoreCase))
             {

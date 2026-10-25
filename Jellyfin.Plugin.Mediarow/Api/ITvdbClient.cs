@@ -15,6 +15,13 @@ public interface ITvdbClient
     Task<TvdbSeriesExtended?> GetSeriesExtendedAsync(int seriesId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Drops cached series details so the next lookup fetches newly announced episodes.
+    /// </summary>
+    void InvalidateSeries(int seriesId)
+    {
+    }
+
+    /// <summary>
     /// Get series information by remote ID (e.g. IMDB).
     /// </summary>
     Task<TvdbSeriesExtended?> GetSeriesByRemoteIdAsync(string remoteId, CancellationToken cancellationToken = default);

@@ -37,7 +37,14 @@ public sealed class VirtualContinueWatchingSection : IHomeSection
         var config = MediarowPlugin.Instance?.Configuration ?? new PluginConfiguration();
         request.Parameters.TryGetValue("contentCategory", out var contentCategory);
         BaseItemDto[] items = _resumeTracker.GetTrackedItemSnapshots(request.UserId)
-            .Select(snapshot => _itemCache.GetItem(snapshot.Item.Id) ?? snapshot.Item)
+            .Select(snapshot => VirtualItemProjection.ForUser(
+                _itemCache.GetItem(snapshot.Item.Id) ?? snapshot.Item,
+                new UserItemDataDto
+                {
+                    Key = snapshot.Item.Id.ToString("N"),
+                    PlaybackPositionTicks = snapshot.PlaybackPositionTicks,
+                    LastPlayedDate = snapshot.LastPlayedDate
+                }))
             .Where(item => HomeRowContentFilter.Matches(item, config, contentCategory))
             .OrderByDescending(item => item.UserData?.LastPlayedDate)
             .Take(Limit)

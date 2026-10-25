@@ -1,5 +1,6 @@
 using Jellyfin.Plugin.Mediarow.Configuration;
 using Jellyfin.Plugin.Mediarow.HomeScreen;
+using Jellyfin.Plugin.Mediarow.Models;
 using Jellyfin.Plugin.Mediarow.Services;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Querying;
@@ -17,17 +18,32 @@ namespace Jellyfin.Plugin.Mediarow.Api;
 public sealed class MediarowHomeController : ControllerBase
 {
     private readonly HomeSectionManager _manager;
-    private readonly HomeSectionUserSettingsStore _userSettings;
+    private readonly UserPreferenceStore _preferenceStore;
+    private readonly UserPreferenceFilter _preferences;
     private readonly HomeSectionBootstrapper _bootstrapper;
+    private readonly UserPermissionGuard _guard;
+    private readonly DynamicItemCache _itemCache;
+    private readonly VirtualResumeTracker _resumeTracker;
+    private readonly CatalogDiscoveryService _discovery;
 
     public MediarowHomeController(
         HomeSectionManager manager,
-        HomeSectionUserSettingsStore userSettings,
-        HomeSectionBootstrapper bootstrapper)
+        UserPreferenceStore preferenceStore,
+        UserPreferenceFilter preferences,
+        HomeSectionBootstrapper bootstrapper,
+        UserPermissionGuard guard,
+        DynamicItemCache itemCache,
+        VirtualResumeTracker resumeTracker,
+        CatalogDiscoveryService discovery)
     {
         _manager = manager;
-        _userSettings = userSettings;
+        _preferenceStore = preferenceStore;
+        _preferences = preferences;
         _bootstrapper = bootstrapper;
+        _guard = guard;
+        _itemCache = itemCache;
+        _resumeTracker = resumeTracker;
+        _discovery = discovery;
     }
 
     [AllowAnonymous]
@@ -63,22 +79,27 @@ public sealed class MediarowHomeController : ControllerBase
     }
 
     [HttpGet("Sections")]
-    public HomeSectionsResult GetSections([FromQuery] Guid userId)
+    public ActionResult<HomeSectionsResult> GetSections([FromQuery] Guid userId)
     {
+        UserAccessResult access = _guard.Resolve(User, userId);
+        if (!access.Succeeded)
+        {
+            return Deny(access.Failure);
+        }
+
         _bootstrapper.RegisterConfiguredSections();
-        IReadOnlySet<string>? enabled = _userSettings.Get(userId);
-        HomeSectionInfo[] sections = _manager.GetSections()
-            .Where(section => enabled == null || enabled.Contains(section.Id))
-            .Select(section => new HomeSectionInfo
+        // Hidden rows are removed and Order is rewritten to the user's position, so clients that sort by Order follow it.
+        HomeSectionInfo[] sections = _preferences
+            .ArrangeSections(access.Context!.UserId, _manager.GetSections(), section => section.Id)
+            .Select((section, index) => new HomeSectionInfo
             {
                 Id = section.Id,
                 DisplayTitle = section.DisplayTitle,
-                Order = section.Order,
+                Order = index,
                 Limit = section.Limit,
                 Route = section.Route,
                 AdditionalData = section.AdditionalData
             })
-            .OrderBy(section => section.Order)
             .ToArray();
         return new HomeSectionsResult(sections)
         {
@@ -99,35 +120,171 @@ public sealed class MediarowHomeController : ControllerBase
         {
             return BadRequest(new { Error = "Content category must be Movies, Series, or Anime." });
         }
+
+        UserAccessResult access = _guard.Resolve(User, userId);
+        if (!access.Succeeded)
+        {
+            return Deny(access.Failure);
+        }
+
+        UserSessionContext session = access.Context!;
         _bootstrapper.RegisterConfiguredSections();
         IReadOnlyDictionary<string, string> parameters = Request.Query
             .Where(pair => !pair.Key.Equals("userId", StringComparison.OrdinalIgnoreCase) &&
                 !pair.Key.Equals("language", StringComparison.OrdinalIgnoreCase))
             .ToDictionary(pair => pair.Key, pair => pair.Value.ToString(), StringComparer.OrdinalIgnoreCase);
-        return await _manager.ExecuteAsync(id, new HomeSectionRequest
+        QueryResult<BaseItemDto> result = await _manager.ExecuteAsync(id, new HomeSectionRequest
         {
-            UserId = userId,
+            UserId = session.UserId,
             Language = language,
             Parameters = parameters
         }, cancellationToken);
+
+        // Section results are cached; project per request so the cached instances stay untouched.
+        IReadOnlyDictionary<Guid, long> resumeTicks = _resumeTracker.GetResumeTicksForUser(session.UserId);
+        BaseItemDto[] items = _preferences.FilterItems(session.UserId, _guard.FilterVisible(session, result.Items ?? Array.Empty<BaseItemDto>()))
+            .Select(item => ProjectForUser(item, resumeTicks))
+            .ToArray();
+        return new QueryResult<BaseItemDto>(items);
     }
 
-    [HttpGet("UserSettings")]
-    public object GetUserSettings([FromQuery] Guid userId)
+    /// <summary>
+    /// One page of a Home row's catalog for "See All": offset = pageIndex * pageSize.
+    /// <paramref name="catalogId"/> is the row's section id (Popular, a genre row or an admin catalog row).
+    /// </summary>
+    [HttpGet("Catalog/{catalogId}/Page")]
+    public async Task<ActionResult<CatalogPageResult>> GetCatalogPage(
+        [FromRoute] string catalogId,
+        [FromQuery] Guid userId,
+        [FromQuery] int pageIndex = 0,
+        [FromQuery] int pageSize = 40,
+        [FromQuery] string? contentCategory = null,
+        CancellationToken cancellationToken = default)
     {
+        if (contentCategory != null && contentCategory is not ("Movies" or "Series" or "Anime"))
+        {
+            return BadRequest(new { Error = "Content category must be Movies, Series, or Anime." });
+        }
+
+        if (pageIndex < 0 || pageSize < 1 || pageSize > CatalogDiscoveryService.MaxPageSize)
+        {
+            return BadRequest(new { Error = $"pageIndex must be 0 or more and pageSize 1-{CatalogDiscoveryService.MaxPageSize}." });
+        }
+
+        UserAccessResult access = _guard.Resolve(User, userId);
+        if (!access.Succeeded)
+        {
+            return Deny(access.Failure);
+        }
+
         _bootstrapper.RegisterConfiguredSections();
-        IReadOnlySet<string>? saved = _userSettings.Get(userId);
+        IHomeSection? section = _manager.GetSections()
+            .FirstOrDefault(candidate => candidate.Id.Equals(catalogId, StringComparison.OrdinalIgnoreCase));
+        IReadOnlyList<CatalogDiscoveryRequest>? requests = section switch
+        {
+            DiscoveryCatalogHomeSection catalog => _discovery.BuildRequests(catalog.Selection, contentCategory),
+            VirtualCatalogHomeSection row => _discovery.BuildRequests(
+                row.Id.Equals("Mediarow_Popular", StringComparison.OrdinalIgnoreCase) ? null : row.AdditionalData ?? row.DisplayTitle,
+                contentCategory),
+            _ => null
+        };
+        if (section == null)
+        {
+            return NotFound(new { Error = "Catalog not found." });
+        }
+
+        if (requests == null)
+        {
+            return BadRequest(new { Error = "This row has no catalog to page through." });
+        }
+
+        var (pageItems, hasMore) = await _discovery.GetPageAsync(requests, pageIndex, pageSize, contentCategory, cancellationToken);
+        UserSessionContext session = access.Context!;
+        IReadOnlyDictionary<Guid, long> resumeTicks = _resumeTracker.GetResumeTicksForUser(session.UserId);
+        BaseItemDto[] items = _preferences.FilterItems(session.UserId, _guard.FilterVisible(session, pageItems))
+            .Select(item => ProjectForUser(item, resumeTicks))
+            .ToArray();
+        return new CatalogPageResult(items, pageIndex, pageSize, hasMore)
+        {
+            CatalogId = section.Id,
+            DisplayTitle = section.DisplayTitle
+        };
+    }
+
+    /// <summary>
+    /// Catalogs and genres an administrator can add to Home.
+    /// </summary>
+    [HttpGet("Catalogs")]
+    [Authorize(Policy = "RequiresElevation")]
+    public async Task<ActionResult<CatalogOptions>> GetAvailableCatalogs(CancellationToken cancellationToken = default)
+    {
+        return await _discovery.GetAvailableCatalogsAsync(cancellationToken);
+    }
+
+    private BaseItemDto ProjectForUser(BaseItemDto item, IReadOnlyDictionary<Guid, long> resumeTicks)
+    {
+        if (!_itemCache.HasItem(item.Id))
+        {
+            // Library DTOs are built by Jellyfin for this user; untracked virtual snapshots are already per-user copies.
+            return item;
+        }
+
+        // Virtual items carry user state only from this user's resume tracker.
+        UserItemDataDto? userData = resumeTicks.TryGetValue(item.Id, out long ticks)
+            ? new UserItemDataDto
+            {
+                Key = item.Id.ToString("N"),
+                PlaybackPositionTicks = ticks,
+                LastPlayedDate = item.UserData?.LastPlayedDate
+            }
+            : null;
+
+        return VirtualItemProjection.ForUser(item, userData);
+    }
+
+    private ActionResult Deny(UserAccessFailure failure) => failure switch
+    {
+        UserAccessFailure.Unauthenticated => Unauthorized(),
+        UserAccessFailure.UnknownUser => NotFound(new { Error = "User not found." }),
+        _ => Forbid()
+    };
+
+    [HttpGet("UserSettings")]
+    public ActionResult<object> GetUserSettings([FromQuery] Guid userId)
+    {
+        UserAccessResult access = _guard.Resolve(User, userId);
+        if (!access.Succeeded)
+        {
+            return Deny(access.Failure);
+        }
+
+        Guid effectiveUserId = access.Context!.UserId;
+        _bootstrapper.RegisterConfiguredSections();
+        UserHomePreferences saved = _preferenceStore.Get(effectiveUserId);
         return new
         {
-            UserId = userId,
-            EnabledSections = saved?.ToArray() ?? _manager.GetSections().Select(section => section.Id).ToArray()
+            UserId = effectiveUserId,
+            EnabledSections = _manager.GetSections()
+                .Where(section => !saved.IsSectionHidden(section.Id))
+                .Select(section => section.Id)
+                .ToArray()
         };
     }
 
     [HttpPost("UserSettings")]
     public IActionResult UpdateUserSettings([FromBody] HomeSectionUserSettings settings)
     {
-        _userSettings.Set(settings.UserId, settings.EnabledSections);
+        UserAccessResult access = _guard.Resolve(User, settings.UserId);
+        if (!access.Succeeded)
+        {
+            return Deny(access.Failure);
+        }
+
+        _bootstrapper.RegisterConfiguredSections();
+        _preferenceStore.SetEnabledSections(
+            access.Context!.UserId,
+            settings.EnabledSections,
+            _manager.GetSections().Select(section => section.Id));
         return Ok();
     }
 

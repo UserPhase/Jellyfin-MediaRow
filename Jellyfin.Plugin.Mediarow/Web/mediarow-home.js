@@ -14,6 +14,7 @@
         ordered.forEach(function (section) {
             var isContinueWatching = section.Id === 'Mediarow_ContinueWatching';
             var isPopular = section.Id === 'Mediarow_Popular';
+            var isCatalog = section.Id.indexOf('MediarowCatalog_') === 0;
             var isAnime = (section.AdditionalData || section.DisplayTitle || '').toLowerCase() === 'anime';
             var rowCategories;
             if (categories.length === 0) {
@@ -24,7 +25,8 @@
                     return;
                 }
                 rowCategories = [view];
-            } else if (isContinueWatching) {
+            } else if (isContinueWatching || isCatalog) {
+                // Admin catalog rows carry their own movie/series choice.
                 rowCategories = [null];
             } else if (isPopular) {
                 rowCategories = categories;
@@ -38,7 +40,7 @@
             rowCategories.forEach(function (category) {
                 rows.push(extend({}, section, {
                     ContentCategory: category,
-                    DisplayTitle: isContinueWatching || !category || isAnime
+                    DisplayTitle: isContinueWatching || isCatalog || !category || isAnime
                         ? section.DisplayTitle
                         : section.DisplayTitle + ' ' + category,
                     Order: rows.length
@@ -91,15 +93,18 @@
         return apiClient.getCurrentUserId ? apiClient.getCurrentUserId() : null;
     }
 
-    function resolvePlaybackItem(apiClient, itemId) {
-        var url = apiClient.getUrl('Mediarow/Playback/Resolve/' + encodeURIComponent(itemId));
+    // JSON request through Jellyfin's ApiClient (adds auth headers); plain fetch for clients without ajax().
+    // A 204 / empty body resolves to null.
+    function sendJson(apiClient, method, url, body) {
+        var payload = JSON.stringify(body === undefined ? {} : body);
+        var expectsBody = method !== 'DELETE';
         if (apiClient.ajax) {
             return apiClient.ajax({
                 url: url,
-                type: 'POST',
-                data: '{}',
+                type: method,
+                data: payload,
                 contentType: 'application/json; charset=utf-8',
-                dataType: 'json'
+                dataType: expectsBody ? 'json' : undefined
             });
         }
 
@@ -112,20 +117,25 @@
         }
 
         return fetch(url, {
-            method: 'POST',
+            method: method,
             credentials: 'same-origin',
-            headers: headers
+            headers: headers,
+            body: payload
         }).then(function (response) {
             if (!response.ok) {
-                return response.text().then(function (body) {
-                    var error = new Error('Resolve failed: ' + response.status);
+                return response.text().then(function (text) {
+                    var error = new Error(method + ' failed: ' + response.status);
                     error.status = response.status;
-                    error.responseText = body;
+                    error.responseText = text;
                     throw error;
                 });
             }
-            return response.json();
+            return response.status === 204 || !expectsBody ? null : response.json();
         });
+    }
+
+    function resolvePlaybackItem(apiClient, itemId) {
+        return sendJson(apiClient, 'POST', apiClient.getUrl('Mediarow/Playback/Resolve/' + encodeURIComponent(itemId)));
     }
 
     function openResolvedDetails(event, apiClient, item) {
@@ -195,13 +205,14 @@
         window.location.hash = '#/details?id=' + encodeURIComponent(itemId);
     }
 
-    function createCard(apiClient, item, index) {
+    function createCard(apiClient, item, index, dismissible) {
         var card = document.createElement('a');
         card.className = 'mediarowHomeCard';
         card.href = '#/details?id=' + encodeURIComponent(item.Id);
         card.title = item.Name || '';
         card.draggable = false;
         card.setAttribute('data-mediarow-index', String(index));
+        card.setAttribute('data-mediarow-item', item.Id);
         card.addEventListener('click', function (event) { openResolvedDetails(event, apiClient, item); });
 
         var image = document.createElement('img');
@@ -212,6 +223,30 @@
         image.src = apiClient.getUrl('Mediarow/Items/' + item.Id + '/Images/Primary');
         card.appendChild(image);
 
+        if (dismissible) {
+            // Kept out of the tab order so remote/arrow navigation still moves card by card; Delete on a focused card does the same.
+            var dismiss = document.createElement('button');
+            dismiss.type = 'button';
+            dismiss.className = 'mediarowDismiss';
+            dismiss.tabIndex = -1;
+            dismiss.title = 'Not interested';
+            dismiss.setAttribute('aria-label', 'Not interested in ' + (item.Name || 'this title'));
+            dismiss.textContent = '\u00d7';
+            dismiss.addEventListener('click', function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                dismissTitle(apiClient, item);
+            });
+            card.appendChild(dismiss);
+            card.setAttribute('aria-keyshortcuts', 'Delete');
+            card.addEventListener('keydown', function (event) {
+                if (event.key === 'Delete' || event.keyCode === 46) {
+                    event.preventDefault();
+                    dismissTitle(apiClient, item);
+                }
+            });
+        }
+
         var title = document.createElement('div');
         title.className = 'mediarowHomeCardTitle';
         title.textContent = item.Name || '';
@@ -219,7 +254,95 @@
         return card;
     }
 
-    function setupCarousel(apiClient, items, catalogItems, previousButton, nextButton) {
+    function preferencesUrl(apiClient, path) {
+        return apiClient.getUrl('Plugins/AIOStreams/' + path + '?userId=' + encodeURIComponent(getUserId(apiClient)));
+    }
+
+    // Removes a title from every rendered row and See all grid at once. Rows are rebuilt from their
+    // remaining items so the carousel clones and keyboard order stay consistent.
+    function removeTitleEverywhere(apiClient, itemId) {
+        Array.prototype.slice.call(document.querySelectorAll('.mediarowHomeRow')).forEach(function (row) {
+            if (!row.mediarowSection || !row.querySelector('[data-mediarow-item="' + itemId + '"]')) {
+                return;
+            }
+            var remaining = (row.mediarowItems || []).filter(function (item) { return item.Id !== itemId; });
+            var replacement = createRow(apiClient, row.mediarowSection, { Items: remaining });
+            if (replacement) {
+                row.parentNode.replaceChild(replacement, row);
+            } else {
+                row.parentNode.removeChild(row);
+            }
+        });
+        Array.prototype.slice.call(document.querySelectorAll('.mediarowSeeAllCard[data-mediarow-item="' + itemId + '"]')).forEach(function (card) {
+            card.parentNode.removeChild(card);
+        });
+    }
+
+    function dismissTitle(apiClient, item) {
+        var name = item.Name || 'This title';
+        var url = preferencesUrl(apiClient, 'NotInterested/' + encodeURIComponent(item.Id));
+        removeTitleEverywhere(apiClient, item.Id);
+        var saved = Promise.resolve(sendJson(apiClient, 'POST', url)).then(function () { return true; }, function (error) {
+            console.warn('Mediarow could not save Not interested', error);
+            showToast('Could not hide ' + name + '. Try again.');
+            refreshHome();
+            return false;
+        });
+        showToast(name + ' won\u2019t be suggested again.', 'Undo', function () {
+            // Undo waits for the save so the DELETE can never overtake the POST.
+            saved.then(function (wasSaved) {
+                return wasSaved ? sendJson(apiClient, 'DELETE', url) : null;
+            }).then(refreshHome, function (error) {
+                console.warn('Mediarow could not undo Not interested', error);
+                showToast('Could not undo. Remove it under Customize instead.');
+            });
+        });
+    }
+
+    var toastTimer = null;
+
+    function showToast(message, actionLabel, action) {
+        var existing = document.querySelector('.mediarowToast');
+        if (existing) {
+            existing.parentNode.removeChild(existing);
+        }
+        clearTimeout(toastTimer);
+        var toast = document.createElement('div');
+        toast.className = 'mediarowToast';
+        toast.setAttribute('role', 'status');
+        var text = document.createElement('span');
+        text.textContent = message;
+        toast.appendChild(text);
+        function hide() {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        }
+        if (actionLabel && action) {
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'mediarowToastAction';
+            button.textContent = actionLabel;
+            button.addEventListener('click', function () {
+                hide();
+                action();
+            });
+            toast.appendChild(button);
+        }
+        document.body.appendChild(toast);
+        toastTimer = setTimeout(hide, 7000);
+    }
+
+    function refreshHome() {
+        var root = document.querySelector('[data-mediarow-home="true"]');
+        if (root && root.parentNode) {
+            root.parentNode.removeChild(root);
+        }
+        isLoading = false;
+        return loadRows();
+    }
+
+    function setupCarousel(apiClient, items, catalogItems, previousButton, nextButton, dismissible) {
         var originals = Array.prototype.slice.call(items.children);
         var cycleWidth = 0;
         var pointer = null;
@@ -261,7 +384,7 @@
                 var suffix = document.createDocumentFragment();
                 catalogItems.forEach(function (item, index) {
                     [prefix, suffix].forEach(function (fragment) {
-                        var card = createCard(apiClient, item, index);
+                        var card = createCard(apiClient, item, index, dismissible);
                         card.dataset.carouselCopy = 'true';
                         card.setAttribute('aria-hidden', 'true');
                         card.tabIndex = -1;
@@ -379,6 +502,406 @@
         requestAnimationFrame(updateLayout);
     }
 
+    var seeAllPageSize = 40;
+
+    function catalogPageUrl(apiClient, section, pageIndex) {
+        var query = '?userId=' + encodeURIComponent(getUserId(apiClient)) +
+            '&pageIndex=' + pageIndex + '&pageSize=' + seeAllPageSize;
+        if (section.ContentCategory) {
+            query += '&contentCategory=' + encodeURIComponent(section.ContentCategory);
+        }
+        return apiClient.getUrl('Mediarow/Home/Catalog/' + encodeURIComponent(section.Id) + '/Page' + query);
+    }
+
+    // Full-screen grid for one row. Pages are requested with pageIndex/pageSize; the server turns them
+    // into upstream offsets (Stremio skip / TMDB page) so page 2+ continues where page 1 ended.
+    function openSeeAll(apiClient, section) {
+        var existing = document.querySelector('.mediarowSeeAllPanel');
+        if (existing) {
+            existing.parentNode.removeChild(existing);
+        }
+        var opener = document.activeElement;
+        var panel = document.createElement('div');
+        panel.className = 'mediarowSeeAllPanel';
+        panel.setAttribute('role', 'dialog');
+        panel.setAttribute('aria-modal', 'true');
+        panel.setAttribute('aria-label', section.DisplayTitle);
+
+        var header = document.createElement('div');
+        header.className = 'mediarowSeeAllHeader';
+        var title = document.createElement('h2');
+        title.className = 'mediarowSeeAllTitle';
+        title.textContent = section.DisplayTitle;
+        var close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'mediarowSeeAllClose';
+        close.setAttribute('aria-label', 'Close ' + section.DisplayTitle);
+        close.textContent = '\u00d7';
+        header.appendChild(title);
+        header.appendChild(close);
+        panel.appendChild(header);
+
+        var grid = document.createElement('div');
+        grid.className = 'mediarowSeeAllGrid';
+        panel.appendChild(grid);
+        var status = document.createElement('p');
+        status.className = 'mediarowSeeAllStatus';
+        status.setAttribute('role', 'status');
+        panel.appendChild(status);
+        var more = document.createElement('button');
+        more.type = 'button';
+        more.className = 'mediarowSeeAllMore';
+        more.textContent = 'Load more';
+        more.hidden = true;
+        panel.appendChild(more);
+
+        var nextPage = 0;
+        var loading = false;
+        var seen = {};
+        var count = 0;
+
+        function dismiss() {
+            if (!panel.parentNode) {
+                return;
+            }
+            panel.parentNode.removeChild(panel);
+            document.removeEventListener('keydown', onKey, true);
+            window.removeEventListener('hashchange', dismiss);
+            document.documentElement.classList.remove('mediarowSeeAllOpen');
+            if (opener && opener.focus && isAttached(opener)) {
+                opener.focus();
+            }
+        }
+
+        function onKey(event) {
+            if (event.key === 'Escape' || event.key === 'Backspace' || event.keyCode === 27 || event.keyCode === 461 || event.keyCode === 10009) {
+                if (event.key === 'Backspace' && /^(INPUT|TEXTAREA)$/.test((event.target || {}).tagName || '')) {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                dismiss();
+            }
+        }
+
+        function loadPage() {
+            if (loading) {
+                return;
+            }
+            loading = true;
+            more.disabled = true;
+            status.textContent = nextPage === 0 ? 'Loading...' : 'Loading more...';
+            var pageIndex = nextPage;
+            Promise.resolve(apiClient.getJSON(catalogPageUrl(apiClient, section, pageIndex))).then(function (page) {
+                if (!panel.parentNode) {
+                    return;
+                }
+                var firstNew = null;
+                (page.Items || []).forEach(function (item) {
+                    if (seen[item.Id]) {
+                        return;
+                    }
+                    seen[item.Id] = true;
+                    var card = createCard(apiClient, item, count++, true);
+                    card.className += ' mediarowSeeAllCard';
+                    grid.appendChild(card);
+                    firstNew = firstNew || card;
+                });
+                nextPage = pageIndex + 1;
+                more.hidden = !page.HasMore;
+                status.textContent = count === 0 ? 'Nothing to show in this row.' : (page.HasMore ? '' : count + ' titles');
+                if (pageIndex > 0 && firstNew) {
+                    firstNew.focus();
+                } else if (pageIndex === 0) {
+                    (grid.firstChild || close).focus();
+                }
+            }, function (error) {
+                console.warn('Mediarow See all failed to load', error);
+                status.textContent = 'Could not load more titles. Try again.';
+                more.hidden = false;
+            }).then(function () {
+                loading = false;
+                more.disabled = false;
+            });
+        }
+
+        close.addEventListener('click', dismiss);
+        more.addEventListener('click', loadPage);
+        document.addEventListener('keydown', onKey, true);
+        // Opening a title changes the hash; the panel must not cover the details page.
+        window.addEventListener('hashchange', dismiss);
+        document.documentElement.classList.add('mediarowSeeAllOpen');
+        document.body.appendChild(panel);
+        close.focus();
+        loadPage();
+    }
+
+    function moveInList(list, index, delta) {
+        var target = index + delta;
+        if (index < 0 || target < 0 || target >= list.length) {
+            return list.slice();
+        }
+        var copy = list.slice();
+        var moved = copy.splice(index, 1)[0];
+        copy.splice(target, 0, moved);
+        return copy;
+    }
+
+    var sectionKindLabels = {
+        ContinueWatching: 'Your progress',
+        Popular: 'Trending now',
+        Catalog: 'Catalog',
+        Genre: 'Genre'
+    };
+
+    function el(tag, className, text) {
+        var element = document.createElement(tag);
+        if (className) {
+            element.className = className;
+        }
+        if (text !== undefined) {
+            element.textContent = text;
+        }
+        return element;
+    }
+
+    function createSwitch(label, checked, onChange) {
+        var input = el('input', 'mediarowSwitch');
+        input.type = 'checkbox';
+        input.checked = checked;
+        input.setAttribute('role', 'switch');
+        input.setAttribute('aria-label', label);
+        input.addEventListener('change', function () { onChange(input.checked); });
+        return input;
+    }
+
+    // Personal Home controls: row order and visibility, Hide watched and the Not interested list.
+    // Layout changes are saved together; Not interested removals apply immediately.
+    function openCustomize(apiClient) {
+        var existing = document.querySelector('.mediarowCustomize');
+        if (existing) {
+            existing.parentNode.removeChild(existing);
+        }
+        var opener = document.activeElement;
+        var state = null;
+        var homeChanged = false;
+
+        var panel = el('div', 'mediarowCustomize');
+        var backdrop = el('div', 'mediarowCustomizeBackdrop');
+        var sheet = el('div', 'mediarowCustomizeSheet');
+        sheet.setAttribute('role', 'dialog');
+        sheet.setAttribute('aria-modal', 'true');
+        sheet.setAttribute('aria-labelledby', 'mediarowCustomizeTitle');
+        panel.appendChild(backdrop);
+        panel.appendChild(sheet);
+
+        var header = el('header', 'mediarowCustomizeHeader');
+        var headings = el('div');
+        headings.appendChild(el('p', 'mediarowCustomizeEyebrow', 'Personal Home'));
+        var title = el('h2', 'mediarowCustomizeTitle', 'Make Home yours');
+        title.id = 'mediarowCustomizeTitle';
+        headings.appendChild(title);
+        var close = el('button', 'mediarowSeeAllClose', '\u00d7');
+        close.type = 'button';
+        close.setAttribute('aria-label', 'Close Home settings');
+        header.appendChild(headings);
+        header.appendChild(close);
+        sheet.appendChild(header);
+
+        var body = el('div', 'mediarowCustomizeBody');
+        sheet.appendChild(body);
+        var status = el('p', 'mediarowCustomizeStatus', 'Loading your Home\u2026');
+        status.setAttribute('role', 'status');
+        body.appendChild(status);
+
+        var footer = el('footer', 'mediarowCustomizeFooter');
+        var reset = el('button', 'mediarowCustomizeGhost', 'Reset rows');
+        reset.type = 'button';
+        var save = el('button', 'mediarowCustomizePrimary', 'Save');
+        save.type = 'button';
+        footer.appendChild(reset);
+        footer.appendChild(save);
+        sheet.appendChild(footer);
+        reset.disabled = save.disabled = true;
+
+        function dismiss() {
+            if (!panel.parentNode) {
+                return;
+            }
+            panel.parentNode.removeChild(panel);
+            document.removeEventListener('keydown', onKey, true);
+            window.removeEventListener('hashchange', dismiss);
+            document.documentElement.classList.remove('mediarowSeeAllOpen');
+            if (homeChanged) {
+                refreshHome();
+            } else if (opener && opener.focus && isAttached(opener)) {
+                opener.focus();
+            }
+        }
+
+        function onKey(event) {
+            if (event.key === 'Escape' || event.key === 'Backspace' || event.keyCode === 27 || event.keyCode === 461 || event.keyCode === 10009) {
+                if (event.key === 'Backspace' && /^(INPUT|TEXTAREA)$/.test((event.target || {}).tagName || '') && event.target.type !== 'checkbox') {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                dismiss();
+            }
+        }
+
+        function load(focusSelector) {
+            status.textContent = 'Loading your Home\u2026';
+            status.hidden = false;
+            return Promise.resolve(apiClient.getJSON(preferencesUrl(apiClient, 'UserPreferences'))).then(function (preferences) {
+                state = {
+                    hideWatched: !!preferences.HideWatched,
+                    sections: (preferences.Sections || []).map(function (section) {
+                        return { id: section.Id, title: section.DisplayTitle, kind: section.Kind, visible: section.Visible };
+                    }),
+                    notInterested: preferences.NotInterested || []
+                };
+                reset.disabled = save.disabled = false;
+                render(focusSelector);
+            }, function (error) {
+                console.warn('Mediarow could not load Home preferences', error);
+                status.textContent = 'Could not load your Home settings. Close and try again.';
+            });
+        }
+
+        function render(focusSelector) {
+            while (body.firstChild) {
+                body.removeChild(body.firstChild);
+            }
+
+            var watched = el('section', 'mediarowCustomizeGroup');
+            var watchedRow = el('label', 'mediarowCustomizeToggle');
+            var watchedText = el('span', 'mediarowCustomizeToggleText');
+            watchedText.appendChild(el('strong', null, 'Hide watched titles'));
+            watchedText.appendChild(el('span', 'mediarowCustomizeHint', 'Movies and shows you have finished disappear from every row.'));
+            watchedRow.appendChild(watchedText);
+            watchedRow.appendChild(createSwitch('Hide watched titles', state.hideWatched, function (checked) { state.hideWatched = checked; }));
+            watched.appendChild(watchedRow);
+            body.appendChild(watched);
+
+            var rows = el('section', 'mediarowCustomizeGroup');
+            rows.appendChild(el('h3', 'mediarowCustomizeGroupTitle', 'Rows'));
+            rows.appendChild(el('p', 'mediarowCustomizeHint', 'Move rows with the arrows and switch off the ones you never use. Home shows the first six genre rows.'));
+            var list = el('ol', 'mediarowCustomizeRows');
+            state.sections.forEach(function (section, index) {
+                var item = el('li', 'mediarowCustomizeRow' + (section.visible ? '' : ' isHidden'));
+                item.setAttribute('data-section', section.id);
+                item.appendChild(el('span', 'mediarowCustomizeIndex', (index < 9 ? '0' : '') + (index + 1)));
+                var text = el('span', 'mediarowCustomizeRowText');
+                text.appendChild(el('span', 'mediarowCustomizeRowTitle', section.title));
+                text.appendChild(el('span', 'mediarowCustomizeKind', sectionKindLabels[section.kind] || section.kind));
+                item.appendChild(text);
+                [['up', '\u2191', -1, 'Move ' + section.title + ' up'], ['down', '\u2193', 1, 'Move ' + section.title + ' down']].forEach(function (spec) {
+                    var button = el('button', 'mediarowCustomizeMove', spec[1]);
+                    button.type = 'button';
+                    button.setAttribute('data-move', spec[0]);
+                    button.setAttribute('aria-label', spec[3]);
+                    button.disabled = index + spec[2] < 0 || index + spec[2] >= state.sections.length;
+                    button.addEventListener('click', function () {
+                        state.sections = moveInList(state.sections, index, spec[2]);
+                        var targetIndex = index + spec[2];
+                        var edge = targetIndex === 0 || targetIndex === state.sections.length - 1;
+                        // Keep focus on the moved row; at an edge the pressed arrow is disabled, so use the other one.
+                        render('[data-section="' + section.id + '"] [data-move="' + (edge ? (spec[0] === 'up' ? 'down' : 'up') : spec[0]) + '"]');
+                    });
+                    item.appendChild(button);
+                });
+                item.appendChild(createSwitch('Show ' + section.title, section.visible, function (checked) {
+                    section.visible = checked;
+                    item.className = 'mediarowCustomizeRow' + (checked ? '' : ' isHidden');
+                }));
+                list.appendChild(item);
+            });
+            rows.appendChild(list);
+            body.appendChild(rows);
+
+            var dismissed = el('section', 'mediarowCustomizeGroup');
+            dismissed.appendChild(el('h3', 'mediarowCustomizeGroupTitle', 'Not interested' + (state.notInterested.length ? ' \u00b7 ' + state.notInterested.length : '')));
+            if (!state.notInterested.length) {
+                dismissed.appendChild(el('p', 'mediarowCustomizeHint', 'Titles you dismiss with \u00d7 on a poster are listed here so you can bring them back.'));
+            }
+            var hiddenList = el('ul', 'mediarowCustomizeDismissed');
+            state.notInterested.forEach(function (entry) {
+                var item = el('li', 'mediarowCustomizeDismissedItem');
+                item.appendChild(el('span', null, (entry.Name || 'Unknown title') + (entry.ProductionYear ? ' (' + entry.ProductionYear + ')' : '')));
+                var restore = el('button', 'mediarowCustomizeGhost', 'Show again');
+                restore.type = 'button';
+                restore.setAttribute('aria-label', 'Show ' + (entry.Name || 'this title') + ' again');
+                restore.addEventListener('click', function () {
+                    restore.disabled = true;
+                    Promise.resolve(sendJson(apiClient, 'DELETE', preferencesUrl(apiClient, 'NotInterested/' + encodeURIComponent(entry.ItemId)))).then(function () {
+                        homeChanged = true;
+                        state.notInterested = state.notInterested.filter(function (other) { return other.ItemId !== entry.ItemId; });
+                        render('.mediarowCustomizeDismissed button, .mediarowCustomizePrimary');
+                    }, function (error) {
+                        console.warn('Mediarow could not restore title', error);
+                        restore.disabled = false;
+                        showToast('Could not restore ' + (entry.Name || 'this title') + '.');
+                    });
+                });
+                item.appendChild(restore);
+                hiddenList.appendChild(item);
+            });
+            dismissed.appendChild(hiddenList);
+            body.appendChild(dismissed);
+
+            var focusTarget = focusSelector && sheet.querySelector(focusSelector);
+            (focusTarget || close).focus();
+        }
+
+        save.addEventListener('click', function () {
+            if (!state) {
+                return;
+            }
+            save.disabled = true;
+            save.textContent = 'Saving\u2026';
+            Promise.resolve(sendJson(apiClient, 'POST', preferencesUrl(apiClient, 'UserPreferences'), {
+                UserId: getUserId(apiClient),
+                HideWatched: state.hideWatched,
+                SectionOrder: state.sections.map(function (section) { return section.id; }),
+                HiddenSections: state.sections.filter(function (section) { return !section.visible; }).map(function (section) { return section.id; })
+            })).then(function () {
+                homeChanged = true;
+                dismiss();
+            }, function (error) {
+                console.warn('Mediarow could not save Home preferences', error);
+                save.disabled = false;
+                save.textContent = 'Save';
+                showToast('Could not save your Home settings. Try again.');
+            });
+        });
+
+        reset.addEventListener('click', function () {
+            reset.disabled = true;
+            Promise.resolve(sendJson(apiClient, 'POST', preferencesUrl(apiClient, 'UserPreferences'), {
+                UserId: getUserId(apiClient),
+                SectionOrder: [],
+                HiddenSections: []
+            })).then(function () {
+                homeChanged = true;
+                return load('.mediarowCustomizeFooter .mediarowCustomizeGhost');
+            }, function (error) {
+                console.warn('Mediarow could not reset Home rows', error);
+                reset.disabled = false;
+                showToast('Could not reset rows. Try again.');
+            });
+        });
+
+        close.addEventListener('click', dismiss);
+        backdrop.addEventListener('click', dismiss);
+        document.addEventListener('keydown', onKey, true);
+        window.addEventListener('hashchange', dismiss);
+        document.documentElement.classList.add('mediarowSeeAllOpen');
+        document.body.appendChild(panel);
+        close.focus();
+        load();
+    }
+
     function createRow(apiClient, section, result) {
         var row = document.createElement('section');
         row.className = 'mediarowHomeRow';
@@ -406,6 +929,15 @@
         }
         var previousButton = createButton('Previous items', '<');
         var nextButton = createButton('Next items', '>');
+        if (section.Id !== 'Mediarow_ContinueWatching') {
+            var seeAll = document.createElement('button');
+            seeAll.type = 'button';
+            seeAll.className = 'mediarowSeeAll';
+            seeAll.textContent = 'See all';
+            seeAll.setAttribute('aria-label', 'See all ' + section.DisplayTitle);
+            seeAll.addEventListener('click', function () { openSeeAll(apiClient, section); });
+            header.appendChild(seeAll);
+        }
         header.appendChild(controls);
         row.appendChild(header);
 
@@ -413,12 +945,15 @@
         items.className = 'mediarowHomeRowItems';
         items.setAttribute('role', 'group');
         items.setAttribute('aria-label', section.DisplayTitle + ' carousel. Drag, swipe or use the arrow keys to browse.');
+        var dismissible = section.Id !== 'Mediarow_ContinueWatching';
         (result.Items || []).forEach(function (item, index) {
-            items.appendChild(createCard(apiClient, item, index));
+            items.appendChild(createCard(apiClient, item, index, dismissible));
         });
         if (items.children.length > 0) {
             row.appendChild(items);
-            setupCarousel(apiClient, items, result.Items, previousButton, nextButton);
+            row.mediarowSection = section;
+            row.mediarowItems = result.Items;
+            setupCarousel(apiClient, items, result.Items, previousButton, nextButton, dismissible);
             return row;
         }
         return null;
@@ -535,11 +1070,18 @@
                     });
                     filters.appendChild(button);
                 });
+                var customize = document.createElement('button');
+                customize.type = 'button';
+                customize.className = 'mediarowHomeFilter mediarowCustomizeButton';
+                customize.textContent = 'Customize';
+                customize.setAttribute('aria-haspopup', 'dialog');
+                customize.addEventListener('click', function () { openCustomize(apiClient); });
+                filters.appendChild(customize);
                 root.appendChild(filters);
                 var status = document.createElement('p');
                 status.className = 'mediarowHomeStatus';
                 status.setAttribute('role', 'status');
-                status.textContent = sections.length ? 'Loading ' + selectedCategory.toLowerCase() + ' rows...' : 'No content selected. Enable content categories and rows in Mediarow settings.';
+                status.textContent = sections.length ? 'Loading ' + selectedCategory.toLowerCase() + ' rows...' : 'No rows to show. Turn rows back on under Customize, or enable content categories in Mediarow settings.';
                 root.appendChild(status);
                 var rowsContainer = document.createElement('div');
                 root.appendChild(rowsContainer);

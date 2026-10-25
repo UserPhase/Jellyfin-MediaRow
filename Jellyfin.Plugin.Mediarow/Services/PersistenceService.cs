@@ -25,6 +25,7 @@ public class PersistenceService
     private readonly ILogger<PersistenceService> _logger;
     private readonly IProviderManager? _providerManager;
     private readonly IFileSystem? _fileSystem;
+    private readonly TemporaryItemActivity? _temporaryActivity;
 
     // Invalid filesystem characters
     private static readonly Regex InvalidCharsRegex = new(@"[<>:""/\\|?*]", RegexOptions.Compiled);
@@ -35,16 +36,25 @@ public class PersistenceService
         DynamicItemCache itemCache,
         ILogger<PersistenceService> logger,
         IProviderManager? providerManager = null,
-        IFileSystem? fileSystem = null)
+        IFileSystem? fileSystem = null,
+        TemporaryItemActivity? temporaryActivity = null)
     {
         _libraryManager = libraryManager;
         _itemCache = itemCache;
         _logger = logger;
         _providerManager = providerManager;
         _fileSystem = fileSystem;
+        _temporaryActivity = temporaryActivity;
     }
 
     protected virtual PluginConfiguration Config => MediarowPlugin.Instance?.Configuration ?? new PluginConfiguration();
+
+    private IDisposable? TrackUse(string? path)
+    {
+        var config = Config;
+        var title = config.Enabled && config.CleanupUnsavedItems ? TemporaryItemActivity.GetTitlePath(config, path) : null;
+        return title == null ? null : _temporaryActivity?.BeginUse(title);
+    }
 
     /// <summary>
     /// Persist a movie as a .strm file.
@@ -52,6 +62,7 @@ public class PersistenceService
     /// <returns>The path to the created folder, or null if already exists or failed.</returns>
     public async Task<string?> PersistMovieAsync(BaseItemDto movie, CancellationToken cancellationToken = default)
     {
+        using var activity = Config.CleanupUnsavedItems ? TrackUse(GetMovieFilePath(movie)) : null;
         if (movie.Type != BaseItemKind.Movie)
         {
             _logger.LogDebug("[PersistenceService] Item is not a movie: {Name} ({Type})", movie.Name, movie.Type);
@@ -113,6 +124,7 @@ public class PersistenceService
     /// <returns>The path to the created folder, or null if already exists or failed.</returns>
     public async Task<string?> PersistSeriesAsync(BaseItemDto series, CancellationToken cancellationToken = default)
     {
+        using var activity = Config.CleanupUnsavedItems ? TrackUse(GetSeriesFolderPath(series)) : null;
         if (series.Type != BaseItemKind.Series)
         {
             _logger.LogDebug("[PersistenceService] Item is not a series: {Name} ({Type})", series.Name, series.Type);
@@ -215,6 +227,7 @@ public class PersistenceService
     /// <param name="source">The catalog title, whose cached episode metadata is applied to the imported episodes.</param>
     public async Task AddToLibraryAsync(string createdPath, BaseItemKind type, BaseItemDto? source = null)
     {
+        using var activity = TrackUse(createdPath);
         if (!Config.TriggerLibraryScan)
         {
             _logger.LogDebug("[PersistenceService] Library scan disabled in config");
@@ -337,11 +350,11 @@ public class PersistenceService
             var directoryService = new DirectoryService(_fileSystem);
             if (_libraryManager.FindByPath(seriesPath, true) is not Series series)
             {
-                series = _libraryManager.ResolvePath(_fileSystem.GetDirectoryInfo(seriesPath), libraryFolder, directoryService, CollectionType.tvshows) as Series;
-                if (series == null)
+                if (_libraryManager.ResolvePath(_fileSystem.GetDirectoryInfo(seriesPath), libraryFolder, directoryService, CollectionType.tvshows) is not Series resolvedSeries)
                 {
                     return false;
                 }
+                series = resolvedSeries;
 
                 libraryFolder.AddChild(series);
             }
@@ -452,6 +465,7 @@ public class PersistenceService
     /// </summary>
     private async Task RefreshSeasonAsync(Season season)
     {
+        using var activity = TrackUse(season.Path);
         var directoryService = new DirectoryService(_fileSystem!);
         await season.ValidateChildren(new Progress<double>(), new MetadataRefreshOptions(directoryService), recursive: true).ConfigureAwait(false);
 
@@ -820,6 +834,7 @@ public class PersistenceService
 
     public async Task ApplyCatalogMetadataAsync(BaseItem target, BaseItemDto source, CancellationToken cancellationToken)
     {
+        using var activity = TrackUse(target.Path);
         ApplyCatalogFields(target, source);
         await _libraryManager.UpdateItemAsync(target, target.GetParent(), ItemUpdateType.MetadataEdit, cancellationToken);
     }
@@ -953,6 +968,7 @@ public class PersistenceService
     /// <returns>The number of new episodes added.</returns>
     public async Task<int> UpdateSeriesAsync(BaseItemDto series, CancellationToken cancellationToken = default)
     {
+        using var activity = Config.CleanupUnsavedItems ? TrackUse(GetSeriesFolderPath(series)) : null;
         if (series.Type != BaseItemKind.Series)
         {
             return 0;
@@ -974,58 +990,170 @@ public class PersistenceService
             return 0;
         }
 
-        // Get existing .strm files on disk
-        var existingFiles = Directory.GetFiles(seriesPath, "*.strm", SearchOption.AllDirectories);
-        var existingEpisodes = ParseExistingEpisodes(existingFiles);
+        var written = await WriteNewEpisodesAsync(series, seriesPath, cachedEpisodes, cancellationToken).ConfigureAwait(false);
+        return written.Count;
+    }
 
-        // Find new episodes (skip specials - season 0, filter to aired only)
+    /// <summary>
+    /// Writes .strm/.nfo files for aired, non-special catalog episodes missing from <paramref name="seriesPath"/>.
+    /// New season folders get a season.nfo. Path-based so localized series names cannot point at the wrong folder.
+    /// </summary>
+    /// <returns>The (season, episode) numbers written.</returns>
+    public async Task<IReadOnlyList<(int Season, int Episode)>> WriteNewEpisodesAsync(
+        BaseItemDto series,
+        string seriesPath,
+        IReadOnlyList<BaseItemDto> catalogEpisodes,
+        CancellationToken cancellationToken = default)
+    {
+        using var activity = TrackUse(seriesPath);
+        if (!Directory.Exists(seriesPath) || catalogEpisodes.Count == 0)
+        {
+            return [];
+        }
+
+        var imdbId = series.ProviderIds?.GetValueOrDefault("Imdb");
+        var tvdbId = series.ProviderIds?.GetValueOrDefault("Tvdb");
+        var seriesIdForUrl = imdbId ?? tvdbId;
+        if (string.IsNullOrEmpty(seriesIdForUrl))
+        {
+            _logger.LogDebug("[PersistenceService] {Name} has no IMDb or TVDB id; cannot write episodes", series.Name);
+            return [];
+        }
+
+        var existingEpisodes = ParseExistingEpisodes(Directory.GetFiles(seriesPath, "*.strm", SearchOption.AllDirectories));
+
+        // Skip specials (season 0) and unaired episodes.
         var now = DateTime.UtcNow;
-        var newEpisodes = cachedEpisodes
-            .Where(e => e.ParentIndexNumber.HasValue && e.ParentIndexNumber > 0)
-            .Where(e => e.IndexNumber.HasValue)
-            .Where(e => e.PremiereDate.HasValue && e.PremiereDate.Value <= now) // Only aired episodes
+        var newEpisodes = catalogEpisodes
+            .Where(e => e.ParentIndexNumber is > 0 && e.IndexNumber.HasValue)
+            .Where(e => e.PremiereDate.HasValue && e.PremiereDate.Value <= now)
             .Where(e => !existingEpisodes.Contains((e.ParentIndexNumber!.Value, e.IndexNumber!.Value)))
+            .GroupBy(e => (e.ParentIndexNumber!.Value, e.IndexNumber!.Value))
+            .Select(group => group.First())
             .ToList();
 
         if (newEpisodes.Count == 0)
         {
             _logger.LogDebug("[PersistenceService] No new episodes for series: {Name}", series.Name);
-            return 0;
+            return [];
         }
 
-        _logger.LogInformation("[PersistenceService] Found {Count} new episodes for series: {Name}",
-            newEpisodes.Count, series.Name);
-
-        // Get series info for persistence
-        var imdbId = series.ProviderIds?.GetValueOrDefault("Imdb");
-        var tvdbId = series.ProviderIds?.GetValueOrDefault("Tvdb");
-        var seriesIdForUrl = imdbId ?? tvdbId;
         var isAnime = MediarowService.IsAnime(series);
-
-        // Persist each new episode
+        var written = new List<(int Season, int Episode)>(newEpisodes.Count);
         foreach (var episode in newEpisodes)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var seasonNumber = episode.ParentIndexNumber!.Value;
-            var seasonFolder = $"Season {seasonNumber:D2}";
-            var seasonPath = Path.Combine(seriesPath, seasonFolder);
-
-            // Create season folder if needed
+            var seasonPath = FindSeasonFolder(seriesPath, seasonNumber) ?? Path.Combine(seriesPath, $"Season {seasonNumber:D2}");
             Directory.CreateDirectory(seasonPath);
-
-            await PersistEpisodeAsync(
-                episode,
-                series,
-                seasonPath,
-                seasonNumber,
-                seriesIdForUrl!,
-                isAnime,
-                cancellationToken);
+            await WriteSeasonMetadataAsync(seasonPath, seasonNumber, cancellationToken).ConfigureAwait(false);
+            await PersistEpisodeAsync(episode, series, seasonPath, seasonNumber, seriesIdForUrl, isAnime, cancellationToken).ConfigureAwait(false);
+            written.Add((seasonNumber, episode.IndexNumber!.Value));
         }
 
-        _logger.LogInformation("[PersistenceService] Added {Count} new episodes for series: {Name}",
-            newEpisodes.Count, series.Name);
+        _logger.LogInformation("[PersistenceService] Added {Count} new episodes for series: {Name}", written.Count, series.Name);
+        return written;
+    }
 
-        return newEpisodes.Count;
+    private static string? FindSeasonFolder(string seriesPath, int seasonNumber)
+    {
+        return Directory.EnumerateDirectories(seriesPath)
+            .FirstOrDefault(directory =>
+            {
+                var match = SeasonFolderRegex.Match(Path.GetFileName(directory));
+                return match.Success && int.TryParse(match.Groups[1].Value, out var number) && number == seasonNumber;
+            });
+    }
+
+    /// <summary>
+    /// Adds newly written episode files of an already imported series straight into the library (no full scan), with
+    /// series/season links set so native "Next Up" sees them immediately. Fires ItemAdded for each episode.
+    /// </summary>
+    /// <returns>Episodes created, or null when the series must be picked up by a library scan instead.</returns>
+    public async Task<int?> ImportNewEpisodesAsync(
+        string seriesPath,
+        IReadOnlyList<BaseItemDto>? catalogEpisodes,
+        CancellationToken cancellationToken = default)
+    {
+        using var activity = TrackUse(seriesPath);
+        if (_fileSystem == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            if (_libraryManager.FindByPath(seriesPath, true) is not Series series)
+            {
+                return null;
+            }
+
+            var directoryService = new DirectoryService(_fileSystem);
+            // Non-recursive: adds any new season folders without re-probing every existing episode.
+            await series.ValidateChildren(new Progress<double>(), new MetadataRefreshOptions(directoryService), recursive: false, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var seasons = _libraryManager.GetItemsResult(new InternalItemsQuery
+                {
+                    ParentId = series.Id, IncludeItemTypes = [BaseItemKind.Season]
+                }).Items
+                .Select(season => _libraryManager.GetItemById(season.Id)).OfType<Season>()
+                .ToList();
+
+            var relocked = new List<Season>();
+            foreach (var season in seasons.Where(season => season.IsLocked))
+            {
+                // Locked parents make new episodes skip their own NFO (no names or numbers).
+                season.IsLocked = false;
+                await _libraryManager.UpdateItemAsync(season, season.GetParent(), ItemUpdateType.None, cancellationToken).ConfigureAwait(false);
+                relocked.Add(season);
+            }
+
+            var created = 0;
+            var affected = new List<Season>();
+            foreach (var season in seasons)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var count = CreateSeasonEpisodes(series, season, catalogEpisodes);
+                if (count > 0)
+                {
+                    created += count;
+                    affected.Add(season);
+                }
+            }
+
+            if (affected.Count > 0 || relocked.Count > 0)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        foreach (var season in affected)
+                        {
+                            await RefreshSeasonAsync(season).ConfigureAwait(false);
+                        }
+
+                        foreach (var season in relocked.Where(season => !string.IsNullOrEmpty(season.Path)))
+                        {
+                            await RemoveLockAsync(Path.Combine(season.Path, "season.nfo")).ConfigureAwait(false);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning("[PersistenceService] Refreshing new episodes of {Name} failed ({ErrorType})", series.Name, ex.GetType().Name);
+                    }
+                });
+            }
+
+            return created;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("[PersistenceService] Direct episode import failed ({ErrorType}); a library scan will pick them up", ex.GetType().Name);
+            return null;
+        }
     }
 
     /// <summary>

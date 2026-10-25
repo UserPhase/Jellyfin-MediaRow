@@ -29,4 +29,11 @@ public interface IAIOStreamsClient
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Stream response or null if failed.</returns>
     Task<AIOStreamsResponse?> GetEpisodeStreamsAsync(string imdbId, int season, int episode, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Drops the cached stream list of a title so the next lookup asks the addon again (expired links).
+    /// </summary>
+    void InvalidateStreams(string imdbId, int? season = null, int? episode = null)
+    {
+    }
 }

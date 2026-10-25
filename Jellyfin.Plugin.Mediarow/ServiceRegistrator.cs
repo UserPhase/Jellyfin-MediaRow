@@ -41,23 +41,35 @@ public class ServiceRegistrator : IPluginServiceRegistrator
 
         // Register caches and services
         services.AddSingleton<DynamicItemCache>();
+        services.AddSingleton<UserPermissionGuard>();
         services.AddSingleton<SearchResultFactory>();
         services.AddSingleton<MediarowService>();
         services.AddSingleton<VirtualCatalogService>();
+        services.AddSingleton<CatalogDiscoveryService>();
+        services.AddSingleton<EpisodeSyncService>();
         services.AddSingleton<HomeSectionManager>();
         services.AddSingleton<HomeSectionBootstrapper>();
-        services.AddSingleton<HomeSectionUserSettingsStore>();
+        services.AddSingleton<UserPreferenceStore>();
+        services.AddSingleton<IWatchedTitleLookup, LibraryWatchedTitleLookup>();
+        services.AddSingleton<UserPreferenceFilter>();
         services.AddSingleton<MediarowWebIntegrationStartupFilter>();
         services.AddSingleton<Microsoft.AspNetCore.Hosting.IStartupFilter>(provider =>
             provider.GetRequiredService<MediarowWebIntegrationStartupFilter>());
         services.AddSingleton<SubtitleService>();
         services.AddSingleton<PersistenceService>();
+        services.AddSingleton<TemporaryItemActivity>();
+        services.AddSingleton<MovieWatchHistory>();
+        services.AddSingleton<IMovieWatchHistory>(provider => provider.GetRequiredService<MovieWatchHistory>());
+        services.AddSingleton<Microsoft.Extensions.Hosting.IHostedService>(provider => provider.GetRequiredService<MovieWatchHistory>());
         services.AddSingleton<SeriesResumeResolver>();
         services.AddSingleton<VirtualResumeTracker>();
         services.AddSingleton<DynamicAioStreamsMediaSourceProvider>();
         services.AddSingleton<IMediaSourceProvider>(provider => provider.GetRequiredService<DynamicAioStreamsMediaSourceProvider>());
         services.AddSingleton<PlaybackItemResolver>();
         services.AddSingleton<AioStreamsHttpRelay>();
+        services.AddSingleton<IStreamHealthProbe, HttpStreamHealthProbe>();
+        services.AddSingleton<StreamResolverService>();
+        services.AddSingleton<PluginDiagnosticsService>();
         services.AddSingleton<AioStreamsPlaybackFilter>();
         services.AddSingleton<LanguagePreferenceFilter>();
         services.AddSingleton<SkipSegmentService>();
@@ -76,10 +88,12 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         services.AddSingleton<SeasonEpisodeFilter>();
         services.AddSingleton<SubtitleFilter>();
         services.AddSingleton<VirtualPlaybackProgressFilter>();
+        services.AddSingleton<TemporaryItemActivityFilter>();
 
         // Register filters with MVC
         services.PostConfigure<Microsoft.AspNetCore.Mvc.MvcOptions>(options =>
         {
+            options.Filters.AddService<TemporaryItemActivityFilter>(order: -1);
             options.Filters.AddService<AppLibraryFilter>(order: -1);           // App libraries for native/TV clients
             options.Filters.AddService<ImageFilter>(order: 0);                  // Run first for images
             options.Filters.AddService<ItemLookupFilter>(order: 0);             // Run first for item lookups
@@ -96,7 +110,9 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         // Register scheduled tasks
         services.AddSingleton<IScheduledTask, CacheCleanupTask>();
         services.AddSingleton<IScheduledTask, WatchedItemCleanupTask>();
+        services.AddSingleton<IScheduledTask, UnsavedItemCleanupTask>();
         services.AddSingleton<IScheduledTask, ApiHealthCheckTask>();
         services.AddSingleton<IScheduledTask, HomeSectionStartupTask>();
+        services.AddSingleton<IScheduledTask, ScheduledEpisodeUpdateTask>();
     }
 }

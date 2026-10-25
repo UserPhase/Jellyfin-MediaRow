@@ -1,4 +1,5 @@
 using Jellyfin.Data.Enums;
+using Jellyfin.Plugin.Mediarow.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.Filters;
@@ -40,15 +41,12 @@ public static class ActionContextExtensions
         return ctx.HttpContext.TryGetUserId(out userId);
     }
 
+    /// <summary>
+    /// Reads the authenticated caller from Jellyfin's token claims. Client-supplied ids (query/body) are never trusted here.
+    /// </summary>
     public static bool TryGetUserId(this HttpContext ctx, out Guid userId)
     {
-        userId = Guid.Empty;
-
-        var userIdStr =
-            ctx.User.Claims.FirstOrDefault(c => c.Type is "UserId" or "Jellyfin-UserId" or "JellyfinUserId" or "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value
-            ?? ctx.Request.Query["userId"].FirstOrDefault();
-
-        return Guid.TryParse(userIdStr, out userId);
+        return UserPermissionGuard.TryGetCallerId(ctx.User, out userId);
     }
 
     public static bool TryGetActionArgument<T>(

@@ -114,10 +114,11 @@ public sealed class VirtualResumeTracker
                 snapshots[userKey] = itemMap;
             }
 
-            item.UserData = GetUserData(userId, item.Id);
+            // Snapshot a private copy: the caller's item may be a shared cache entry.
+            var snapshot = VirtualItemProjection.ForUser(item, GetUserData(userId, item.Id));
             itemMap[item.Id.ToString("N")] = new VirtualResumeItem
             {
-                Item = item,
+                Item = snapshot,
                 PlaybackPositionTicks = playbackPositionTicks,
                 LastPlayedDate = DateTime.UtcNow
             };
@@ -139,6 +140,29 @@ public sealed class VirtualResumeTracker
             }
 
             return ticks;
+        }
+    }
+
+    public IReadOnlyDictionary<Guid, long> GetResumeTicksForUser(Guid userId)
+    {
+        lock (_lock)
+        {
+            var state = LoadState();
+            if (!state.TryGetValue(userId.ToString("N"), out var itemMap))
+            {
+                return new Dictionary<Guid, long>();
+            }
+
+            var result = new Dictionary<Guid, long>();
+            foreach (var (key, ticks) in itemMap)
+            {
+                if (ticks > 0 && Guid.TryParse(key, out var itemId))
+                {
+                    result[itemId] = ticks;
+                }
+            }
+
+            return result;
         }
     }
 

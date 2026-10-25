@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Jellyfin Mediarow</title>
-</head>
-<body>
-  <div data-role="page" id="mediarowConfigPage" class="page type-interior pluginConfigurationPage">
-    <style>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jellyfin Mediarow</title>
+  </head>
+  <body>
+    <div data-role="page" id="mediarowConfigPage" class="page type-interior pluginConfigurationPage">
+      <style>
       #mediarowConfigPage .homeContentChoices { display: flex; flex-wrap: wrap; gap: 1em 2em; margin: 1em 0; }
       #mediarowConfigPage .homeSectionChoice { display: flex; align-items: center; gap: .5em; padding: .6em; margin: .3em 0; border: 1px solid rgba(128, 128, 128, .35); border-radius: .35em; }
       #mediarowConfigPage .homeSectionChoice.isSelected { border-left: 3px solid #00a4dc; }
@@ -16,6 +16,13 @@
       #mediarowConfigPage .homeSectionDragHandle { cursor: grab; padding: .25em; opacity: .65; }
       #mediarowConfigPage .homeSectionChoice button { padding: .5em; }
       #mediarowConfigPage .homeSectionChoice input[type="checkbox"] { accent-color: #00a4dc; width: 1.15em; height: 1.15em; margin-right: .65em; }
+      #mediarowConfigPage .homeSectionKind { font-size: .72em; letter-spacing: .08em; text-transform: uppercase; padding: .2em .55em; border-radius: 1em; border: 1px solid rgba(0, 164, 220, .6); color: #00a4dc; white-space: nowrap; }
+      #mediarowConfigPage .catalogEditor { padding: 1em 1.1em .9em; border: 1px dashed rgba(128, 128, 128, .45); border-radius: .5em; }
+      #mediarowConfigPage .catalogEditorGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11em, 1fr)); gap: .8em 1em; margin-top: .8em; }
+      #mediarowConfigPage .catalogField { display: flex; flex-direction: column; gap: .3em; font-size: .9em; }
+      #mediarowConfigPage .catalogField > span { opacity: .75; }
+      #mediarowConfigPage .catalogFieldWide { grid-column: 1 / -1; }
+      #mediarowConfigPage .catalogField[hidden] { display: none; }
       #mediarowConfigPage .content-primary { max-width: 60em; }
       #mediarowForm .verticalSection { background: rgba(128, 128, 128, .07); border: 1px solid rgba(128, 128, 128, .2); border-radius: .6em; padding: 1.3em 1.5em .9em; margin: 0 0 1.1em; }
       #mediarowForm > .verticalSection:first-child { background: none; border: 0; padding: 0 0 .4em; }
@@ -60,857 +67,1056 @@
       #mediarowConfigPage .seriesOverride button { margin: 0; padding: .3em .6em; min-width: 0; }
       #mediarowConfigPage .learnedBadge { display: inline-block; margin-left: .5em; padding: .05em .55em; font-size: .72em; font-weight: 600; vertical-align: middle; color: #00a4dc; border: 1px solid rgba(0, 164, 220, .55); border-radius: 2em; }
       @media (max-width: 50em) { #mediarowConfigPage .seriesOverride { grid-template-columns: 1fr 1fr; } }
-    </style>
-    <div data-role="content">
-      <div class="content-primary">
-        <form id="mediarowForm">
-          <div class="verticalSection">
-            <div class="sectionTitleContainer flex align-items-center">
-              <h2 class="sectionTitle">Jellyfin Mediarow</h2>
-            </div>
-            <p class="fieldDescription">
-              Ever wanted an infinite library?
-              Search TVDB and TMDB to discover content not in your library.
-              Optionally configure streaming via Embedarr or direct URL templates.
-            </p>
-          </div>
+      #mediarowConfigPage .diagControls { display: flex; flex-wrap: wrap; align-items: center; gap: .6em 1.6em; margin: 0 0 1em; }
+      #mediarowConfigPage .diagControls button { margin: 0; min-width: 11em; }
+      #mediarowConfigPage .diagSummary { --pass: #52b54b; --warn: #e3a33a; --fail: #e05555; --skip: rgba(128, 128, 128, .55); margin: 0 0 1.2em; padding: 1em 1.2em; background: rgba(0, 0, 0, .18); border: 1px solid rgba(128, 128, 128, .22); border-top: 3px solid var(--tone, #00a4dc); border-radius: .5em; }
+      #mediarowConfigPage .diagSummary[data-status="Pass"] { --tone: var(--pass); }
+      #mediarowConfigPage .diagSummary[data-status="Warning"] { --tone: var(--warn); }
+      #mediarowConfigPage .diagSummary[data-status="Fail"] { --tone: var(--fail); }
+      #mediarowConfigPage .diagHeadline { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .3em 1em; }
+      #mediarowConfigPage .diagHeadline strong { font-size: 1.15em; color: var(--tone, inherit); }
+      #mediarowConfigPage .diagMeta { font-size: .82em; opacity: .6; font-variant-numeric: tabular-nums; }
+      #mediarowConfigPage .diagBar { display: flex; height: .45em; margin: .8em 0 .6em; overflow: hidden; border-radius: 1em; background: rgba(128, 128, 128, .2); }
+      #mediarowConfigPage .diagBar span { transition: flex-grow .5s ease; }
+      #mediarowConfigPage .diagCounts { display: flex; flex-wrap: wrap; gap: .4em 1.2em; font-size: .85em; }
+      #mediarowConfigPage .diagCounts span::before { content: ''; display: inline-block; width: .6em; height: .6em; margin-right: .45em; border-radius: 50%; background: var(--dot); }
+      #mediarowConfigPage .diagGroup { margin: 1.4em 0 .5em .1em; font-size: .72em; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: #00a4dc; }
+      #mediarowConfigPage .diagCheck { margin: .3em 0; background: rgba(128, 128, 128, .07); border: 1px solid rgba(128, 128, 128, .22); border-left: 3px solid var(--tone); border-radius: .4em; animation: diagIn .28s ease both; }
+      #mediarowConfigPage .diagCheck.is-Pass { --tone: #52b54b; }
+      #mediarowConfigPage .diagCheck.is-Warning { --tone: #e3a33a; }
+      #mediarowConfigPage .diagCheck.is-Fail { --tone: #e05555; }
+      #mediarowConfigPage .diagCheck.is-Skipped { --tone: rgba(128, 128, 128, .5); opacity: .7; }
+      #mediarowConfigPage .diagRow { display: grid; grid-template-columns: 5.4em minmax(8em, 13em) 1fr auto; gap: .8em; align-items: center; padding: .6em .8em; list-style: none; }
+      #mediarowConfigPage summary.diagRow { cursor: pointer; }
+      #mediarowConfigPage summary.diagRow::-webkit-details-marker { display: none; }
+      #mediarowConfigPage summary.diagRow:hover { background: rgba(0, 164, 220, .07); }
+      #mediarowConfigPage .diagPill { justify-self: start; padding: .12em .6em; font-size: .7em; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--tone); border: 1px solid var(--tone); border-radius: 2em; }
+      #mediarowConfigPage .diagName { font-weight: 600; }
+      #mediarowConfigPage .diagMessage { font-size: .9em; opacity: .85; line-height: 1.35; }
+      #mediarowConfigPage .diagTime { font-size: .78em; opacity: .5; font-variant-numeric: tabular-nums; white-space: nowrap; }
+      #mediarowConfigPage details[open] > summary .diagTime::after { content: ' \25B4'; }
+      #mediarowConfigPage details:not([open]) > summary .diagTime::after { content: ' \25BE'; }
+      #mediarowConfigPage .diagBody { padding: .1em .9em .8em 6.9em; font-size: .86em; }
+      #mediarowConfigPage .diagHint { margin: 0 0 .6em; padding: .5em .7em; line-height: 1.4; background: rgba(0, 164, 220, .09); border-radius: .3em; }
+      #mediarowConfigPage .diagDetails { display: grid; grid-template-columns: max-content 1fr; gap: .25em 1em; margin: 0; }
+      #mediarowConfigPage .diagDetails dt { opacity: .55; }
+      #mediarowConfigPage .diagDetails dd { margin: 0; word-break: break-word; font-variant-numeric: tabular-nums; }
+      #mediarowConfigPage .diagRunning { display: flex; align-items: center; gap: .8em; padding: 1em 1.2em; border: 1px dashed rgba(0, 164, 220, .5); border-radius: .5em; font-size: .92em; }
+      #mediarowConfigPage .diagRunning::before { content: ''; width: 1em; height: 1em; border: 2px solid rgba(0, 164, 220, .3); border-top-color: #00a4dc; border-radius: 50%; animation: diagSpin .8s linear infinite; }
+      @keyframes diagSpin { to { transform: rotate(360deg); } }
+      @keyframes diagIn { from { opacity: 0; transform: translateY(4px); } }
+      @media (prefers-reduced-motion: reduce) { #mediarowConfigPage .diagCheck, #mediarowConfigPage .diagRunning::before { animation: none; } }
+      @media (max-width: 50em) { #mediarowConfigPage .diagRow { grid-template-columns: auto 1fr auto; } #mediarowConfigPage .diagMessage { grid-column: 1 / -1; } #mediarowConfigPage .diagBody { padding-left: .9em; } }
 
-          <div class="verticalSection">
-            <h3 class="sectionTitle">General</h3>
-            <p class="sectionLead">Turn Mediarow on or off for the whole server.</p>
-            <div class="checkboxContainer checkboxContainer-withDescription">
-              <label>
-                <input is="emby-checkbox" type="checkbox" id="chkEnabled" />
-                <span>Enable Mediarow</span>
-              </label>
-              <div class="fieldDescription">Enable or disable the plugin globally.</div>
-            </div>
-          </div>
+      #mediarowConfigPage { --mrAccent: #00a4dc; --mrLine: rgba(128,128,128,.28); --mrSurface: rgba(128,128,128,.055); }
+      #mediarowConfigPage .content-primary { max-width: 1120px; margin-inline: auto; }
+      #mediarowConfigPage .mrHeader { display: flex; justify-content: space-between; align-items: center; gap: 2em; padding: 1em 0 1.6em; }
+      #mediarowConfigPage .mrEyebrow { font-size: .72em; font-weight: 700; letter-spacing: .16em; opacity: .65; margin: 0 0 .7em; }
+      #mediarowConfigPage h1 { font-size: clamp(2em, 4vw, 3em); font-weight: 500; letter-spacing: -.035em; margin: 0; }
+      #mediarowConfigPage .mrIntro { opacity: .75; margin: .6em 0 0; }
+      #mediarowConfigPage .mrEnable { border-left: 2px solid var(--mrAccent); padding-left: 1.2em; }
+      #mediarowConfigPage .mrEnable .checkboxContainer { margin: 0; }
+      #mediarowConfigPage .mrNav { display: flex; flex-wrap: wrap; padding: .6em 0; border-top: 1px solid var(--mrLine); border-bottom: 1px solid var(--mrLine); margin-bottom: 2em; }
+      #mediarowConfigPage .mrNav button { font: inherit; font-size: .9em; color: inherit; cursor: pointer; background: transparent; border: 0; border-radius: .3em; padding: .75em 1em; min-height: 44px; }
+      #mediarowConfigPage .mrNav button:hover { background: var(--mrSurface); color: var(--mrAccent); }
+      /* Qt 5.15 (Jellyfin Media Player) lacks :is(), :focus-visible and flex gap. */
+      #mediarowConfigPage button:focus, #mediarowConfigPage summary:focus,
+      #mediarowConfigPage input:focus, #mediarowConfigPage select:focus,
+      #mediarowConfigPage [tabindex]:focus { outline: 2px solid var(--mrAccent); outline-offset: 3px; }
+      #mediarowConfigPage .mrSection { margin: 0 0 3em; scroll-margin-top: 6em; }
+      #mediarowConfigPage .mrSectionHeading { display: flex; align-items: flex-start; margin-bottom: 1.2em; }
+      #mediarowConfigPage .mrSectionNumber { margin-right: 1em; }
+      #mediarowConfigPage .mrSectionNumber { color: var(--mrAccent); font-size: .85em; font-weight: 700; padding-top: .5em; font-variant-numeric: tabular-nums; }
+      #mediarowConfigPage .mrSectionHeading h2 { font-size: 1.5em; font-weight: 500; margin: 0; letter-spacing: -.02em; }
+      #mediarowConfigPage .mrSectionHeading p { opacity: .7; margin: .45em 0 0; line-height: 1.5; }
+      #mediarowConfigPage .mrCard { min-width: 0; border: 1px solid var(--mrLine); background: var(--mrSurface); border-radius: .55em; padding: 1.6em; margin-bottom: 1em; }
+      #mediarowConfigPage .mrCard h3 { font-size: 1.1em; font-weight: 600; margin: 0 0 1.25em; }
+      #mediarowConfigPage .mrCard h4 { font-size: 1em; font-weight: 600; margin: 1.5em 0 1em; }
+      #mediarowConfigPage .mrDescription { opacity: .75; line-height: 1.6; margin: -0.5em 0 1.7em; }
+      #mediarowConfigPage .mrGrid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 1em; align-items: start; }
+      #mediarowConfigPage .mrCard .verticalSection { margin: 1.2em 0 0; }
+      #mediarowConfigPage .fieldDescription { line-height: 1.6; overflow-wrap: anywhere; }
+      #mediarowConfigPage .inputContainer { margin-bottom: 1.5em; }
+      #mediarowConfigPage .inputLabel { display: block; margin-bottom: .4em; }
+      #mediarowConfigPage .emby-select { width: 100%; }
+      #mediarowConfigPage .inputContainer:last-child { margin-bottom: 0; }
+      #mediarowConfigPage .checkboxContainer { margin-bottom: 1.3em; }
+      #mediarowConfigPage .mrDetails { border-top: 1px solid var(--mrLine); margin-top: 1.3em; }
+      #mediarowConfigPage .mrDetails > summary { padding: 1em 0; cursor: pointer; font-weight: 500; line-height: 1.5; }
+      #mediarowConfigPage .mrDetailsBody { padding: .4em 0 .6em; }
+      #mediarowConfigPage .mrNotice { border-left: 2px solid var(--mrAccent); background: rgba(0,164,220,.07); padding: .9em 1em; line-height: 1.6; font-size: .9em; }
+      #mediarowConfigPage [hidden] { display: none !important; }
+      #mediarowConfigPage .homeContentChoices { display: flex; flex-wrap: wrap; margin: 1em 0; }
+      #mediarowConfigPage .homeContentChoices > label { margin: .5em 2em .5em 0; }
+      #mediarowConfigPage .mediarowHomeSectionChoices { max-height: 24em; overflow-y: auto; overscroll-behavior: contain; margin-top: 1em; padding: .3em; border: 1px solid var(--mrLine); border-radius: .35em; }
+      #mediarowConfigPage .homeSectionChoice { display: flex; align-items: center; gap: .5em; padding: .55em; margin: .25em 0; border: 1px solid var(--mrLine); border-radius: .3em; }
+      #mediarowConfigPage .homeSectionChoice.isSelected { border-left: 3px solid var(--mrAccent); }
+      #mediarowConfigPage .homeSectionChoice.isDropTarget { outline: 2px solid var(--mrAccent); }
+      #mediarowConfigPage .homeSectionChoice label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+      #mediarowConfigPage .homeSectionDragHandle { cursor: grab; padding: .25em; opacity: .65; }
+      #mediarowConfigPage .homeSectionChoice button { min-width: 44px; min-height: 44px; padding: .5em; }
+      #mediarowConfigPage .homeSectionChoice input[type="checkbox"] { accent-color: var(--mrAccent); width: 1.15em; height: 1.15em; margin-right: .65em; }
+      #mediarowConfigPage .mrSaveBar { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 1em; padding: 1em 1.2em; background: #202020; color: #eee; border: 1px solid var(--mrLine); border-radius: .5em; box-shadow: 0 -4px 18px rgba(0,0,0,.12); }
+      #mediarowConfigPage #configSaveStatus { font-size: .9em; line-height: 1.5; }
+      #mediarowConfigPage #btnSave { min-width: 10em; margin: 0; }
+      @media (max-width: 760px) {
+        #mediarowConfigPage .mrHeader { align-items: flex-start; flex-direction: column; gap: 1.3em; }
+        #mediarowConfigPage .mrGrid { grid-template-columns: minmax(0,1fr); gap: 0; }
+        #mediarowConfigPage .mrCard { padding: 1.15em; }
+        #mediarowConfigPage .mrNav { gap: .1em; }
+        #mediarowConfigPage .mrNav button { padding: .7em; }
+        #mediarowConfigPage .mrSaveBar { padding: .8em; }
+        #mediarowConfigPage #btnSave { min-width: auto; flex-shrink: 0; }
+        #mediarowConfigPage .mediarowHomeSectionChoices { max-height: 20em; }
+      }
 
-          <div class="cardGroupLabel">Catalog</div>
-
-          <div class="verticalSection">
-            <h3 class="sectionTitle">Catalog Provider</h3>
-            <p class="sectionLead">Where Mediarow finds movies and shows that are not in your library yet.</p>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="selCatalogProvider">Provider:</label>
-              <select is="emby-select" id="selCatalogProvider" class="emby-select">
-                <option value="StremioAddon">Stremio Addon</option>
-                <option value="Direct">Direct API Access (TVDB/TMDB)</option>
-              </select>
-              <div class="fieldDescription">
-                <strong>Stremio Addon:</strong> Use a Stremio-compatible addon like Cinemeta or AIOMetadata.<br>
-                <strong>Direct:</strong> Use TVDB and TMDB APIs directly for catalog and metadata.
+      #mediarowConfigPage .mrCard .verticalSection { background: transparent; border: 0; border-radius: 0; padding: 0; }
+      #mediarowConfigPage #languageUserSettings > .verticalSection { background: var(--mrSurface); border: 1px solid var(--mrLine); border-radius: .55em; padding: 1.6em; }
+      #mediarowConfigPage .mrCard .sectionLead { line-height: 1.6; }
+      #mediarowConfigPage .languageAdd > button, #mediarowConfigPage .panelOption > span { margin-left: .5em; }
+      #mediarowConfigPage .languageItem button { min-width: 44px; min-height: 44px; }
+      #mediarowConfigPage .panelStepLabel b { margin-right: .55em; }
+      #mediarowConfigPage .languageUserRow { flex-wrap: wrap; }
+      #mediarowConfigPage .languageColumns, #mediarowConfigPage .catalogEditorGrid { grid-template-columns: repeat(auto-fit, minmax(15em, 1fr)); }
+      #mediarowConfigPage .seriesOverride > *, #mediarowConfigPage .catalogField { min-width: 0; }
+      #mediarowConfigPage .seriesOverride input { width: 100%; box-sizing: border-box; }
+      #mediarowConfigPage .diagSummary { margin-top: 1em; }
+      @media (max-width: 760px) {
+        #mediarowConfigPage .languageColumns, #mediarowConfigPage .catalogEditorGrid { grid-template-columns: minmax(0,1fr); }
+        #mediarowConfigPage .languageUserRow strong { min-width: 0; margin-right: .5em; }
+        #mediarowConfigPage .diagRow { grid-template-columns: 4.5em minmax(0,1fr); }
+        #mediarowConfigPage .diagRow > * { min-width: 0; overflow-wrap: anywhere; }
+      }
+</style>
+      <div data-role="content">
+        <div class="content-primary">
+          <form id="mediarowForm">
+            <header class="mrHeader">
+              <div>
+                <p class="mrEyebrow">PLUGIN SETTINGS</p>
+                <h1>Mediarow</h1>
+                <p class="mrIntro">Discover more. Keep your library light.</p>
               </div>
-            </div>
-          </div>
-
-          <div class="verticalSection" id="stremioCatalogSettings" style="display: none;">
-            <h3 class="sectionTitle">Stremio Catalog Settings</h3>
-            <p class="sectionLead">The Stremio addon used for search, catalogs and item details.</p>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="txtStremioCatalogUrl">Addon URL:</label>
-              <input type="text" id="txtStremioCatalogUrl" class="emby-input" placeholder="https://v3-cinemeta.strem.io" />
-              <div class="fieldDescription">
-                Base URL for the Stremio addon (without /manifest.json).<br>
-                Examples:
-                <ul style="margin: 0.5em 0 0 1.5em; padding: 0;">
-                  <li><strong>Cinemeta (free):</strong> https://v3-cinemeta.strem.io</li>
-                  <li><strong>AIOMetadata:</strong> Your configured addon URL</li>
-                </ul>
-                This is separate from the AIOStreams URL used for streaming.
-              </div>
-            </div>
-
-            <div style="background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 1em; margin: 1em 0;">
-              <h4 style="margin: 0 0 0.5em 0; color: #00a4dc;">How it works</h4>
-              <p style="margin: 0; color: #999; font-size: 0.9em;">
-                Stremio addons provide catalog and metadata for movies and TV shows.<br>
-                This replaces TVDB/TMDB for search and item details. You can still use<br>
-                a different provider (AIOStreams, Embedarr, Direct) for actual streaming.
-              </p>
-            </div>
-          </div>
-
-          <div class="verticalSection">
-            <h3 class="sectionTitle">API Keys</h3>
-            <p class="sectionLead">Keys for TVDB and TMDB, used for search and metadata.</p>
-
-            <div id="apiKeyInfo" style="background: #1a1a1a; border-left: 4px solid #00a4dc; padding: 1em; margin: 1em 0; display: none;">
-              <p style="margin: 0; font-size: 0.95em;">
-                <strong>Stremio Users:</strong> API keys are <em>optional</em> but highly recommended.
-                Providing a TVDB key enables <strong>Official Order Enforcement</strong>, which fixes messy season structures
-                (like Dragon Ball Super being split into 5 seasons) and ensures accurate anime subtitles.
-              </p>
-            </div>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="txtTvdbApiKey">TVDB API Key:</label>
-              <input type="password" id="txtTvdbApiKey" class="emby-input" />
-              <div class="fieldDescription">
-                API key for TVDB (used for TV shows and anime).
-                Get one at <a href="https://thetvdb.com/api-information" target="_blank">thetvdb.com</a>.
-              </div>
-            </div>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="txtTmdbApiKey">TMDB API Key:</label>
-              <input type="password" id="txtTmdbApiKey" class="emby-input" />
-              <div class="fieldDescription">
-                API key for TMDB (used for movies).
-                Get one at <a href="https://www.themoviedb.org/settings/api" target="_blank">themoviedb.org</a>.
-              </div>
-            </div>
-          </div>
-
-          <div class="verticalSection">
-            <h3 class="sectionTitle">Content Sources</h3>
-            <p class="fieldDescription" style="margin-bottom: 1em;">
-              Select which API to use for each content type. These settings apply when <strong>Catalog Provider</strong> is set to <em>Direct</em>, 
-              or for metadata enrichment when using <em>Stremio Addon</em>.
-            </p>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="selMovieApiSource">Movies:</label>
-              <select is="emby-select" id="selMovieApiSource" class="emby-select">
-                <option value="None">Disabled</option>
-                <option value="Tmdb">TMDB</option>
-                <option value="Tvdb">TVDB</option>
-              </select>
-              <div class="fieldDescription">API source for movie searches. TMDB is recommended for movies.</div>
-            </div>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="selTvShowApiSource">TV Shows / Anime:</label>
-              <select is="emby-select" id="selTvShowApiSource" class="emby-select">
-                <option value="None">Disabled</option>
-                <option value="Tvdb">TVDB</option>
-                <option value="Tmdb">TMDB</option>
-              </select>
-              <div class="fieldDescription">API source for TV show and anime searches. TVDB is recommended.</div>
-            </div>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="txtMaxMovieResults">Max Movie Results:</label>
-              <input type="number" id="txtMaxMovieResults" class="emby-input" min="1" max="100" />
-              <div class="fieldDescription">Maximum number of movie results to return (1-100).</div>
-            </div>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="txtMaxTvShowResults">Max TV Show Results:</label>
-              <input type="number" id="txtMaxTvShowResults" class="emby-input" min="1" max="100" />
-              <div class="fieldDescription">Maximum number of TV show/anime results to return (1-100).</div>
-            </div>
-          </div>
-
-          <div class="verticalSection">
-            <h3 class="sectionTitle">Provider ID Preferences</h3>
-            <p class="fieldDescription" style="margin-bottom: 1em;">
-              Select which provider ID to use for streaming (Embedarr or Direct URL templates).
-              IMDB is recommended as it has the widest support. If the preferred ID is not available,
-              the plugin will fall back to other available IDs.
-            </p>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="selMoviePreferredId">Movies:</label>
-              <select is="emby-select" id="selMoviePreferredId" class="emby-select">
-                <option value="Imdb">IMDB (Recommended)</option>
-                <option value="Tmdb">TMDB</option>
-                <option value="Tvdb">TVDB</option>
-              </select>
-              <div class="fieldDescription">
-                ID used for streaming. Available IDs depend on the Content Source selected above.
-              </div>
-            </div>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="selTvShowPreferredId">TV Shows:</label>
-              <select is="emby-select" id="selTvShowPreferredId" class="emby-select">
-                <option value="Imdb">IMDB (Recommended)</option>
-                <option value="Tvdb">TVDB</option>
-                <option value="Tmdb">TMDB</option>
-              </select>
-              <div class="fieldDescription">
-                ID used for streaming. Available IDs depend on the Content Source selected above.
-              </div>
-            </div>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="selAnimePreferredId">Anime:</label>
-              <select is="emby-select" id="selAnimePreferredId" class="emby-select">
-                <option value="Imdb">IMDB (Recommended)</option>
-                <option value="Tvdb">TVDB</option>
-                <option value="AniList">AniList</option>
-                <option value="Tmdb">TMDB</option>
-              </select>
-              <div class="fieldDescription">
-                ID used for streaming. AniList IDs are extracted from TVDB when available.
-              </div>
-            </div>
-          </div>
-
-          <div class="cardGroupLabel">Streaming</div>
-
-          <div class="verticalSection">
-            <h3 class="sectionTitle">Stream Provider</h3>
-            <p class="sectionLead">How a title is turned into a playable stream.</p>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="selStreamProvider">Provider:</label>
-              <select is="emby-select" id="selStreamProvider" class="emby-select">
-                <option value="None">None (Browse Only)</option>
-                <option value="Embedarr">Embedarr</option>
-                <option value="Direct">Direct URL Templates</option>
-                <option value="AIOStreams">AIOStreams</option>
-              </select>
-              <div class="fieldDescription">
-                None: Browse content without streaming capability.<br>
-                Embedarr: Use Embedarr to generate STRM files and stream.<br>
-                Direct: Use custom URL templates for direct streaming.<br>
-                AIOStreams: Use playable HTTP streams from your configured Stremio addon. Raw torrent/info-hash entries are not supported.
-              </div>
-            </div>
-          </div>
-
-          <div class="verticalSection" id="aiostreamsSettings" style="display: none;">
-            <h3 class="sectionTitle">AIOStreams Settings</h3>
-            <p class="sectionLead">Your AIOStreams instance and how its results are picked.</p>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="txtAIOStreamsUrl">AIOStreams Addon URL:</label>
-              <input type="text" id="txtAIOStreamsUrl" class="emby-input" placeholder="https://aiostreams.elfhosted.com/E2_xxxxx" />
-              <div class="fieldDescription">
-                Your full AIOStreams addon URL including the encrypted configuration.<br>
-                Enable Persistence and automatic library scanning below. Set the Movies and Series paths, then add those exact folders as Jellyfin libraries. Selected titles are saved as small STRM/metadata files, not downloaded videos. Jellyfin probes the chosen stream for audio, subtitles, and transcoding.<br>
-                Get yours from:
-                <ul style="margin: 0.5em 0 0 1.5em; padding: 0;">
-                  <li><strong>Self-hosted:</strong> Your AIOStreams instance configuration page</li>
-                  <li><strong>ElfHosted:</strong> <a href="https://elfhosted.com/app/aiostreams/" target="_blank">elfhosted.com/app/aiostreams</a></li>
-                </ul>
-              </div>
-            </div>
-
-            <div style="background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 1em; margin: 1em 0;">
-              <h4 style="margin: 0 0 0.5em 0; color: #00a4dc;">How it works</h4>
-              <p style="margin: 0; color: #999; font-size: 0.9em;">
-                AIOStreams is a Stremio addon aggregator that handles stream discovery and delivery.<br>
-                Configure your sources (debrid services, torrent indexers, NZB via NZBDav) in AIOStreams,<br>
-                then paste your addon URL here. The plugin will query AIOStreams for available streams<br>
-                when you play content.
-              </p>
-            </div>
-
-            <div class="checkboxContainer checkboxContainer-withDescription">
-              <label>
-                <input is="emby-checkbox" type="checkbox" id="chkPreferOriginalLanguageStreams" />
-                <span>Prefer original language</span>
-              </label>
-              <div class="fieldDescription">
-                Moves AIOStreams results in the title's original language (for example English for Smallville) to the top,
-                so they play by default, and selects the original-language audio track in multi-audio releases.
-                Results tagged only with other languages (such as a Russian dub) move to the bottom. Unlabeled results keep their order.
-              </div>
-            </div>
-
-            <div class="checkboxContainer checkboxContainer-withDescription" style="display: none;">
-              <label>
-                <input is="emby-checkbox" type="checkbox" id="chkEnableHlsProbing" />
-                <span>Enable HLS Duration Probing</span>
-              </label>
-              <div class="fieldDescription">
-                Probe HLS streams to extract accurate duration. Helps with scrubbing on Android TV and other players.
-                Disable if experiencing playback issues (some streams use one-time tokens that are invalidated by probing).
-              </div>
-            </div>
-          </div>
-
-          <div class="verticalSection" id="embedarrSettings" style="display: none;">
-            <h3 class="sectionTitle">Embedarr Settings</h3>
-            <p class="sectionLead">Your Embedarr instance for embedded streams.</p>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="txtEmbedarrUrl">Embedarr URL:</label>
-              <input type="text" id="txtEmbedarrUrl" class="emby-input" placeholder="http://localhost:8080" />
-              <div class="fieldDescription">URL to your Embedarr instance for STRM file generation.</div>
-            </div>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="txtEmbedarrApiKey">Embedarr API Key:</label>
-              <input type="password" id="txtEmbedarrApiKey" class="emby-input" />
-              <div class="fieldDescription">API key for Embedarr (if required).</div>
-            </div>
-
-            <div class="checkboxContainer checkboxContainer-withDescription">
-              <label>
-                <input is="emby-checkbox" type="checkbox" id="chkCreateMediaOnView" />
-                <span>Pre-create media when viewing details</span>
-              </label>
-              <div class="fieldDescription">
-                When enabled, Embedarr will add media to the library when you view item details.
-                When disabled (default), media is only streamed on-demand when you click play.
-              </div>
-            </div>
-          </div>
-
-          <div class="verticalSection" id="directSettings" style="display: none;">
-            <h3 class="sectionTitle">Direct URL Templates</h3>
-            <p class="fieldDescription" style="margin-bottom: 1em;">
-              Configure URL templates for direct streaming. Available placeholders:<br>
-              <code>{id}</code> - Preferred ID (based on Provider ID Preferences below)<br>
-              <code>{imdb}</code> - IMDB ID (e.g., tt1234567)<br>
-              <code>{tmdb}</code> - TMDB ID (numeric, movies only)<br>
-              <code>{tvdb}</code> - TVDB ID (numeric, TV/anime only)<br>
-              <code>{anilist}</code> - AniList ID (numeric, anime only)<br>
-              <code>{season}</code> - Season number<br>
-              <code>{episode}</code> - Episode number<br>
-              <code>{absolute}</code> - Absolute episode number (anime only)<br>
-              <code>{audio}</code> - Audio type: "sub" or "dub" (anime only, requires Sub/Dub Selection enabled)<br>
-              <code>{title}</code> - URL-encoded title
-            </p>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="txtDirectMovieUrl">Movie URL Template:</label>
-              <input type="text" id="txtDirectMovieUrl" class="emby-input" placeholder="https://example.com/movie/{imdb}.m3u8" />
-              <div class="fieldDescription">Template for movie streams. Placeholders: {id}, {imdb}, {tmdb}, {title}</div>
-            </div>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="txtDirectTvUrl">TV Show URL Template:</label>
-              <input type="text" id="txtDirectTvUrl" class="emby-input" placeholder="https://example.com/tv/{imdb}/{season}/{episode}.m3u8" />
-              <div class="fieldDescription">Template for TV episodes. Placeholders: {id}, {imdb}, {tvdb}, {season}, {episode}, {title}</div>
-            </div>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="txtDirectAnimeUrl">Anime URL Template:</label>
-              <input type="text" id="txtDirectAnimeUrl" class="emby-input" placeholder="https://example.com/anime/{anilist}/{absolute}/{audio}.m3u8" />
-              <div class="fieldDescription">Template for anime episodes. Placeholders: {id}, {imdb}, {tvdb}, {anilist}, {season}, {episode}, {absolute}, {audio}, {title}</div>
-            </div>
-
-            <div class="checkboxContainer checkboxContainer-withDescription">
-              <label>
-                <input is="emby-checkbox" type="checkbox" id="chkShowUnreleasedStreams" />
-                <span>Show unreleased streams</span>
-              </label>
-              <div class="fieldDescription">
-                When enabled, generates stream URLs even for movies or episodes that haven't been released yet.
-                When disabled (default), unreleased content cannot be played.
-              </div>
-            </div>
-
-            <div class="checkboxContainer checkboxContainer-withDescription">
-              <label>
-                <input is="emby-checkbox" type="checkbox" id="chkEnableAnimeAudioVersions" />
-                <span>Enable Audio Track Selection</span>
-              </label>
-              <div class="fieldDescription">
-                When enabled, anime episodes will show audio track options from the list below.
-                Requires <code>{audio}</code> placeholder in the anime URL template above.
-              </div>
-            </div>
-
-            <div class="inputContainer" id="animeAudioTracksContainer" style="display: none;">
-              <label class="inputLabel inputLabelUnfocused" for="txtAnimeAudioTracks">Anime Audio Tracks:</label>
-              <input type="text" id="txtAnimeAudioTracks" class="emby-input" placeholder="sub,dub" />
-              <div class="fieldDescription">
-                Comma-separated list of audio options. Each value replaces <code>{audio}</code> in the URL template.
-                Example: "sub,dub" creates two options that generate URLs ending in /sub.m3u8 and /dub.m3u8
-              </div>
-            </div>
-          </div>
-
-          <div class="cardGroupLabel">Metadata</div>
-
-          <div class="verticalSection">
-            <h3 class="sectionTitle">Language Settings</h3>
-            <p class="sectionLead">The language used for titles and descriptions from the catalog.</p>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="selLanguageMode">Language Mode:</label>
-              <select is="emby-select" id="selLanguageMode" class="emby-select">
-                <option value="Default">Default (Original Language)</option>
-                <option value="Override">Override (Force Specific Language)</option>
-              </select>
-              <div class="fieldDescription">
-                Default: Use original titles/descriptions from TVDB/TMDB.<br>
-                Override: Request content in your preferred language (translations may not be available for all content).
-              </div>
-            </div>
-
-            <div class="inputContainer" id="languageOverrideContainer" style="display: none;">
-              <label class="inputLabel inputLabelUnfocused" for="selPreferredLanguage">Preferred Language:</label>
-              <select is="emby-select" id="selPreferredLanguage" class="emby-select">
-                <option value="eng">English</option>
-                <option value="jpn">Japanese</option>
-                <option value="spa">Spanish</option>
-                <option value="fra">French</option>
-                <option value="deu">German</option>
-                <option value="ita">Italian</option>
-                <option value="por">Portuguese</option>
-                <option value="rus">Russian</option>
-                <option value="zho">Chinese</option>
-                <option value="kor">Korean</option>
-                <option value="ara">Arabic</option>
-                <option value="hin">Hindi</option>
-                <option value="tha">Thai</option>
-                <option value="vie">Vietnamese</option>
-                <option value="nld">Dutch</option>
-                <option value="pol">Polish</option>
-                <option value="tur">Turkish</option>
-                <option value="swe">Swedish</option>
-                <option value="nor">Norwegian</option>
-                <option value="dan">Danish</option>
-                <option value="fin">Finnish</option>
-                <option value="ukr">Ukrainian</option>
-              </select>
-              <div class="fieldDescription">
-                Language for titles and metadata. Note: TMDB has better translation support than TVDB.
-                Anime titles from TVDB may still appear in Japanese if no English translation exists.
-              </div>
-            </div>
-          </div>
-
-          <div class="cardGroupLabel">Audio &amp; subtitle languages</div>
-
-          <div class="verticalSection" id="languageUserCard">
-            <h3 class="sectionTitle">User</h3>
-            <p class="sectionLead">
-              Select the user whose audio and subtitle preferences you want to configure. Every user has their own settings.
-              Tracks are chosen before playback starts (library videos and Mediarow streams alike), and a track picked by hand always wins.
-            </p>
-            <div class="selectContainer">
-              <label class="selectLabel" for="selLanguageUser">User</label>
-              <select is="emby-select" id="selLanguageUser" class="emby-select-withcolor emby-select"></select>
-            </div>
-            <div class="checkboxContainer checkboxContainer-withDescription">
-              <label>
-                <input is="emby-checkbox" type="checkbox" id="chkLanguageUserEnabled" />
-                <span>Enable language preferences for this user</span>
-              </label>
-              <div class="fieldDescription">Off: Jellyfin's own track choice (and the global "Prefer original language" option for AIOStreams).</div>
-            </div>
-            <div class="languageUserSummary" id="languageUserSummary" aria-label="Overview of all users"></div>
-          </div>
-
-          <div id="languageUserSettings">
-            <div class="verticalSection">
-              <h3 class="sectionTitle">Language Priorities</h3>
-              <p class="sectionLead">Choose what this user hears and reads. Picking a track by hand during playback always wins.</p>
-
-              <div class="languageColumns">
-                <div class="languagePanel">
-                  <h4 class="columnTitle">Audio</h4>
-                  <div class="panelStep">
-                    <label class="panelStepLabel" for="selAudioMode"><b>1</b> Which audio track?</label>
-                    <select is="emby-select" id="selAudioMode" class="emby-select-withcolor emby-select">
-                      <option value="original">The original language</option>
-                      <option value="specific">A specific language</option>
-                      <option value="default">Jellyfin default</option>
-                    </select>
-                    <div class="panelHint" id="audioModeDescription"></div>
+              <div class="mrEnable">
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                  <label> <input is="emby-checkbox" type="checkbox" id="chkEnabled" /> <span>Enable Mediarow</span> </label>
+                  <div class="fieldDescription">
+                    Enable or disable the plugin globally.
                   </div>
-                  <div class="panelStep" id="audioLanguageBlock">
-                    <div class="panelStepLabel"><b>2</b> <span id="audioListLabel">Languages</span></div>
-                    <ol class="languageList" id="audioLanguageList" data-empty="None yet. Add one below."></ol>
-                    <div class="languageAdd">
-                      <select is="emby-select" id="selAudioLanguageAdd" class="emby-select-withcolor emby-select" aria-label="Audio language to add"></select>
-                      <button is="emby-button" type="button" id="btnAddAudioLanguage" class="raised button-submit emby-button">+ Add</button>
+                </div>
+              </div>
+            </header>
+            <nav class="mrNav" aria-label="Settings sections">
+              <button type="button" id="navConnections">
+                Connections
+              </button>
+              <button type="button" id="navHomeRows">
+                Home rows
+              </button>
+              <button type="button" id="navLibrary">
+                Library &amp; cleanup
+              </button>
+              <button type="button" id="navLanguage">
+                Language &amp; subtitles
+              </button>
+              <button type="button" id="navAdvanced">
+                Advanced
+              </button>
+            </nav>
+            <section id="mrConnections" class="mrSection" aria-labelledby="mrConnectionsTitle">
+              <div class="mrSectionHeading">
+                <span class="mrSectionNumber" aria-hidden="true">01</span>
+                <div>
+                  <h2 id="mrConnectionsTitle" tabindex="-1">Connections</h2>
+                  <p>Choose where titles come from and how they play.</p>
+                </div>
+              </div>
+              <div class="mrGrid">
+                <div class="mrCard">
+                  <h3>Metadata & catalogs</h3>
+                  <p class="sectionLead">Where Mediarow finds movies and shows that are not in your library yet.</p>
+                  <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="selCatalogProvider">Provider:</label>
+                    <select is="emby-select" id="selCatalogProvider" class="emby-select">
+                      <option value="StremioAddon">Stremio Addon</option>
+                      <option value="Direct">Direct API Access (TVDB/TMDB)</option>
+                    </select>
+                    <div class="fieldDescription">
+                      <strong>Stremio Addon:</strong>
+                      Use a Stremio-compatible addon like Cinemeta or AIOMetadata.
+                      <br>
+                      <strong>Direct:</strong>
+                      Use TVDB and TMDB APIs directly for catalog and metadata.
+                    </div>
+                  </div>
+                  <div class="verticalSection" id="stremioCatalogSettings" style="display: none;">
+                    <h3 class="sectionTitle">Stremio Catalog Settings</h3>
+                    <p class="sectionLead">The Stremio addon used for search, catalogs and item details.</p>
+                    <div class="inputContainer">
+                      <label class="inputLabel inputLabelUnfocused" for="txtStremioCatalogUrl">Addon URL:</label>
+                      <input type="text" id="txtStremioCatalogUrl" class="emby-input" placeholder="https://v3-cinemeta.strem.io" />
+                      <div class="fieldDescription">
+                        Base URL for the Stremio addon (without /manifest.json).
+                        <br>
+                        Examples:
+                        <ul style="margin: 0.5em 0 0 1.5em; padding: 0;">
+                          <li><strong>Cinemeta (free):</strong> https://v3-cinemeta.strem.io</li>
+                          <li><strong>AIOMetadata:</strong> Your configured addon URL</li>
+                        </ul>
+                        This is separate from the AIOStreams URL used for streaming.
+                      </div>
+                    </div>
+                    <div class="mrNotice">
+                      <h4 style="margin: 0 0 0.5em 0; color: #00a4dc;">How it works</h4>
+                      <p style="margin: 0; color: #999; font-size: 0.9em;"> Stremio addons provide catalog and metadata for movies and TV shows.<br> This replaces TVDB/TMDB for search and item details. You can still use<br> a different provider (AIOStreams, Embedarr, Direct) for actual streaming. </p>
+                    </div>
+                  </div>
+                  <details class="mrDetails" id="metadataApiSettings">
+                    <summary>API keys & metadata sources</summary>
+                    <div class="mrDetailsBody">
+                      <p class="sectionLead">Keys for TVDB and TMDB, used for search and metadata.</p>
+                      <div id="apiKeyInfo" style="background: #1a1a1a; border-left: 4px solid #00a4dc; padding: 1em; margin: 1em 0; display: none;">
+                        <p style="margin: 0; font-size: 0.95em;"> <strong>Stremio Users:</strong> API keys are <em>optional</em> but highly recommended. Providing a TVDB key enables <strong>Official Order Enforcement</strong>, which fixes messy season structures (like Dragon Ball Super being split into 5 seasons) and ensures accurate anime subtitles. </p>
+                      </div>
+                      <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="txtTvdbApiKey">TVDB API Key:</label>
+                        <input type="password" id="txtTvdbApiKey" class="emby-input" />
+                        <div class="fieldDescription">
+                          API key for TVDB (used for TV shows and anime). Get one at
+                          <a href="https://thetvdb.com/api-information" target="_blank">thetvdb.com</a>
+                          .
+                        </div>
+                      </div>
+                      <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="txtTmdbApiKey">TMDB API Key:</label>
+                        <input type="password" id="txtTmdbApiKey" class="emby-input" />
+                        <div class="fieldDescription">
+                          API key for TMDB (used for movies). Get one at
+                          <a href="https://www.themoviedb.org/settings/api" target="_blank">themoviedb.org</a>
+                          .
+                        </div>
+                      </div>
+                      <p class="fieldDescription" style="margin-bottom: 1em;"> Select which API to use for each content type. These settings apply when <strong>Catalog Provider</strong> is set to <em>Direct</em>, or for metadata enrichment when using <em>Stremio Addon</em>. </p>
+                      <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="selMovieApiSource">Movies:</label>
+                        <select is="emby-select" id="selMovieApiSource" class="emby-select">
+                          <option value="None">Disabled</option>
+                          <option value="Tmdb">TMDB</option>
+                          <option value="Tvdb">TVDB</option>
+                        </select>
+                        <div class="fieldDescription">
+                          API source for movie searches. TMDB is recommended for movies.
+                        </div>
+                      </div>
+                      <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="selTvShowApiSource">TV Shows / Anime:</label>
+                        <select is="emby-select" id="selTvShowApiSource" class="emby-select">
+                          <option value="None">Disabled</option>
+                          <option value="Tvdb">TVDB</option>
+                          <option value="Tmdb">TMDB</option>
+                        </select>
+                        <div class="fieldDescription">
+                          API source for TV show and anime searches. TVDB is recommended.
+                        </div>
+                      </div>
+                      <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="txtMaxMovieResults">Max Movie Results:</label>
+                        <input type="number" id="txtMaxMovieResults" class="emby-input" min="1" max="100" />
+                        <div class="fieldDescription">
+                          Maximum number of movie results to return (1-100).
+                        </div>
+                      </div>
+                      <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="txtMaxTvShowResults">Max TV Show Results:</label>
+                        <input type="number" id="txtMaxTvShowResults" class="emby-input" min="1" max="100" />
+                        <div class="fieldDescription">
+                          Maximum number of TV show/anime results to return (1-100).
+                        </div>
+                      </div>
+                    </div>
+                  </details>
+                </div>
+                <div class="mrCard">
+                  <h3>Playback</h3>
+                  <p class="sectionLead">How a title is turned into a playable stream.</p>
+                  <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="selStreamProvider">Provider:</label>
+                    <select is="emby-select" id="selStreamProvider" class="emby-select">
+                      <option value="None">None (Browse Only)</option>
+                      <option value="Embedarr">Embedarr</option>
+                      <option value="Direct">Direct URL Templates</option>
+                      <option value="AIOStreams">AIOStreams</option>
+                    </select>
+                    <div class="fieldDescription">
+                      None: Browse content without streaming capability.
+                      <br>
+                      Embedarr: Use Embedarr to generate STRM files and stream.
+                      <br>
+                      Direct: Use custom URL templates for direct streaming.
+                      <br>
+                      AIOStreams: Use playable HTTP streams from your configured Stremio addon. Raw torrent/info-hash entries are not supported.
+                    </div>
+                  </div>
+                  <div class="verticalSection" id="aiostreamsSettings" style="display: none;">
+                    <h3 class="sectionTitle">AIOStreams Settings</h3>
+                    <p class="sectionLead">Your AIOStreams instance and how its results are picked.</p>
+                    <div class="inputContainer">
+                      <label class="inputLabel inputLabelUnfocused" for="txtAIOStreamsUrl">AIOStreams Addon URL:</label>
+                      <input type="text" id="txtAIOStreamsUrl" class="emby-input" placeholder="https://aiostreams.elfhosted.com/E2_xxxxx" />
+                      <div class="fieldDescription">
+                        Your full AIOStreams addon URL including the encrypted configuration.
+                        <br>
+                        Enable library integration and automatic library scanning below. Set the Movies and Series paths, then add those exact folders as Jellyfin libraries. Selected titles are saved as small STRM/metadata files, not downloaded videos. Jellyfin probes the chosen stream for audio, subtitles, and transcoding.
+                        <br>
+                        Get yours from:
+                        <ul style="margin: 0.5em 0 0 1.5em; padding: 0;">
+                          <li><strong>Self-hosted:</strong> Your AIOStreams instance configuration page</li>
+                          <li><strong>ElfHosted:</strong> <a href="https://elfhosted.com/app/aiostreams/" target="_blank">elfhosted.com/app/aiostreams</a></li>
+                        </ul>
+                      </div>
+                    </div>
+                    <div class="mrNotice">
+                      <h4 style="margin: 0 0 0.5em 0; color: #00a4dc;">How it works</h4>
+                      <p style="margin: 0; color: #999; font-size: 0.9em;"> AIOStreams is a Stremio addon aggregator that handles stream discovery and delivery.<br> Configure your sources (debrid services, torrent indexers, NZB via NZBDav) in AIOStreams,<br> then paste your addon URL here. The plugin will query AIOStreams for available streams<br> when you play content. </p>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                      <label> <input is="emby-checkbox" type="checkbox" id="chkPreferOriginalLanguageStreams" /> <span>Prefer original language</span> </label>
+                      <div class="fieldDescription">
+                        Moves AIOStreams results in the title's original language (for example English for Smallville) to the top, so they play by default, and selects the original-language audio track in multi-audio releases. Results tagged only with other languages (such as a Russian dub) move to the bottom. Unlabeled results keep their order.
+                      </div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                      <label> <input is="emby-checkbox" type="checkbox" id="chkEnableStreamRecovery" /> <span>Recover expired streams</span> </label>
+                      <div class="fieldDescription">
+                        Streams play through this server, so when a debrid link expires (for example after a long pause) or a host briefly fails, Mediarow fetches a fresh link for the same file and playback continues. Turn off to let clients stream straight from the debrid host (less server bandwidth, but an expired link stops playback until the title is reopened).
+                      </div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription" style="display: none;">
+                      <label> <input is="emby-checkbox" type="checkbox" id="chkEnableHlsProbing" /> <span>Enable HLS Duration Probing</span> </label>
+                      <div class="fieldDescription">
+                        Probe HLS streams to extract accurate duration. Helps with scrubbing on Android TV and other players. Disable if experiencing playback issues (some streams use one-time tokens that are invalidated by probing).
+                      </div>
+                    </div>
+                  </div>
+                  <div class="verticalSection" id="embedarrSettings" style="display: none;">
+                    <h3 class="sectionTitle">Embedarr Settings</h3>
+                    <p class="sectionLead">Your Embedarr instance for embedded streams.</p>
+                    <div class="inputContainer">
+                      <label class="inputLabel inputLabelUnfocused" for="txtEmbedarrUrl">Embedarr URL:</label>
+                      <input type="text" id="txtEmbedarrUrl" class="emby-input" placeholder="http://localhost:8080" />
+                      <div class="fieldDescription">
+                        URL to your Embedarr instance for STRM file generation.
+                      </div>
+                    </div>
+                    <div class="inputContainer">
+                      <label class="inputLabel inputLabelUnfocused" for="txtEmbedarrApiKey">Embedarr API Key:</label>
+                      <input type="password" id="txtEmbedarrApiKey" class="emby-input" />
+                      <div class="fieldDescription">
+                        API key for Embedarr (if required).
+                      </div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                      <label> <input is="emby-checkbox" type="checkbox" id="chkCreateMediaOnView" /> <span>Pre-create media when viewing details</span> </label>
+                      <div class="fieldDescription">
+                        When enabled, Embedarr will add media to the library when you view item details. When disabled (default), media is only streamed on-demand when you click play.
+                      </div>
+                    </div>
+                  </div>
+                  <div class="verticalSection" id="directSettings" style="display: none;">
+                    <h3 class="sectionTitle">Direct URL Templates</h3>
+                    <p class="fieldDescription" style="margin-bottom: 1em;"> Configure URL templates for direct streaming. Available placeholders:<br> <code>{id}</code> - Preferred ID (based on Provider ID Preferences below)<br> <code>{imdb}</code> - IMDB ID (e.g., tt1234567)<br> <code>{tmdb}</code> - TMDB ID (numeric, movies only)<br> <code>{tvdb}</code> - TVDB ID (numeric, TV/anime only)<br> <code>{anilist}</code> - AniList ID (numeric, anime only)<br> <code>{season}</code> - Season number<br> <code>{episode}</code> - Episode number<br> <code>{absolute}</code> - Absolute episode number (anime only)<br> <code>{audio}</code> - Audio type: "sub" or "dub" (anime only, requires Sub/Dub Selection enabled)<br> <code>{title}</code> - URL-encoded title </p>
+                    <div class="inputContainer">
+                      <label class="inputLabel inputLabelUnfocused" for="txtDirectMovieUrl">Movie URL Template:</label>
+                      <input type="text" id="txtDirectMovieUrl" class="emby-input" placeholder="https://example.com/movie/{imdb}.m3u8" />
+                      <div class="fieldDescription">
+                        Template for movie streams. Placeholders: {id}, {imdb}, {tmdb}, {title}
+                      </div>
+                    </div>
+                    <div class="inputContainer">
+                      <label class="inputLabel inputLabelUnfocused" for="txtDirectTvUrl">TV Show URL Template:</label>
+                      <input type="text" id="txtDirectTvUrl" class="emby-input" placeholder="https://example.com/tv/{imdb}/{season}/{episode}.m3u8" />
+                      <div class="fieldDescription">
+                        Template for TV episodes. Placeholders: {id}, {imdb}, {tvdb}, {season}, {episode}, {title}
+                      </div>
+                    </div>
+                    <div class="inputContainer">
+                      <label class="inputLabel inputLabelUnfocused" for="txtDirectAnimeUrl">Anime URL Template:</label>
+                      <input type="text" id="txtDirectAnimeUrl" class="emby-input" placeholder="https://example.com/anime/{anilist}/{absolute}/{audio}.m3u8" />
+                      <div class="fieldDescription">
+                        Template for anime episodes. Placeholders: {id}, {imdb}, {tvdb}, {anilist}, {season}, {episode}, {absolute}, {audio}, {title}
+                      </div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                      <label> <input is="emby-checkbox" type="checkbox" id="chkShowUnreleasedStreams" /> <span>Show unreleased streams</span> </label>
+                      <div class="fieldDescription">
+                        When enabled, generates stream URLs even for movies or episodes that haven't been released yet. When disabled (default), unreleased content cannot be played.
+                      </div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                      <label> <input is="emby-checkbox" type="checkbox" id="chkEnableAnimeAudioVersions" /> <span>Enable Audio Track Selection</span> </label>
+                      <div class="fieldDescription">
+                        When enabled, anime episodes will show audio track options from the list below. Requires
+                        <code>{audio}</code>
+                        placeholder in the anime URL template above.
+                      </div>
+                    </div>
+                    <div class="inputContainer" id="animeAudioTracksContainer" style="display: none;">
+                      <label class="inputLabel inputLabelUnfocused" for="txtAnimeAudioTracks">Anime Audio Tracks:</label>
+                      <input type="text" id="txtAnimeAudioTracks" class="emby-input" placeholder="sub,dub" />
+                      <div class="fieldDescription">
+                        Comma-separated list of audio options. Each value replaces
+                        <code>{audio}</code>
+                        in the URL template. Example: "sub,dub" creates two options that generate URLs ending in /sub.m3u8 and /dub.m3u8
+                      </div>
+                    </div>
+                  </div>
+                  <p id="playbackSetupNote" class="mrNotice" role="status" hidden>AIOStreams playback needs library integration, automatic scanning, and the generated folders added as Jellyfin libraries. Configure these in <strong>Library &amp; cleanup</strong>.</p>
+                </div>
+              </div>
+            </section>
+            <section id="mrHomeRows" class="mrSection" aria-labelledby="mrHomeRowsTitle">
+              <div class="mrSectionHeading">
+                <span class="mrSectionNumber" aria-hidden="true">02</span>
+                <div>
+                  <h2 id="mrHomeRowsTitle" tabindex="-1">Home rows</h2>
+                  <p>Choose content, add discovery catalogs, and arrange rows for Web and TV apps.</p>
+                </div>
+              </div>
+              <div class="mrCard">
+                <h3>Content & row order</h3>
+                <p class="fieldDescription" style="margin-bottom: 1em;"> Renders virtual Popular and genre rows through Mediarow. Items are fetched dynamically and are not imported into the Jellyfin library. </p>
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                  <label> <input is="emby-checkbox" type="checkbox" id="chkEnableHomeRows" /> <span>Enable virtual Home rows</span> </label>
+                </div>
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                  <label> <input is="emby-checkbox" type="checkbox" id="chkEnableAppLibraries" /> <span>Show rows in TV and native apps</span> </label>
+                  <div class="fieldDescription checkboxFieldDescription">
+                    Publishes each row as a virtual library so Android TV, Swiftfin, Findroid, Kodi and Samsung Tizen apps show them as "Latest" rows. Browsers and the Android/iOS/desktop apps already show the full Mediarow Home.
+                  </div>
+                </div>
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                  <label> <input is="emby-checkbox" type="checkbox" id="chkShowAppLibrariesInWeb" /> <span>Also list these libraries in the web client</span> </label>
+                  <div class="fieldDescription checkboxFieldDescription">
+                    Off by default to avoid showing every row twice in the browser.
+                  </div>
+                </div>
+                <div class="inputContainer">
+                  <div class="inputLabel">
+                    What kind of content do you want displayed?
+                  </div>
+                  <div class="homeContentChoices">
+                    <label><input is="emby-checkbox" type="checkbox" id="chkHomeMovies" checked /><span>Movies</span></label>
+                    <label><input is="emby-checkbox" type="checkbox" id="chkHomeSeries" checked /><span>Series</span></label>
+                    <label><input is="emby-checkbox" type="checkbox" id="chkHomeAnime" /><span>Anime</span></label>
+                  </div>
+                  <div class="fieldDescription">
+                    Movies and series are enabled by default. Anime is separate: enable it to include anime movies and series identified by your provider's metadata.
+                  </div>
+                </div>
+                <div class="inputContainer">
+                  <div class="inputLabel">
+                    Home rows and order:
+                  </div>
+                  <div class="fieldDescription">
+                    Home shows separate Popular rows and the first six checked genres, alternating movie and series categories (plus Anime if enabled). Category filters show every checked genre for that content type. Your row order is preserved in both views.
+                  </div>
+                  <div class="fieldDescription">
+                    Check the rows to show, then drag checked rows into order. Up/Down buttons also work with a keyboard or on a phone. Save, then return to Home to apply the changes without restarting Jellyfin.
+                  </div>
+                  <div id="homeSectionChoices" class="mediarowHomeSectionChoices" aria-live="polite">
+                  </div>
+                  <div class="flex align-items-center" style="gap: 0.5em; margin-top: 0.75em;">
+                    <input type="text" id="txtNewHomeGenre" class="emby-input" placeholder="Add a genre row" aria-label="New genre row" />
+                    <button id="btnAddHomeGenre" is="emby-button" type="button" class="emby-button button-submit">
+                      <span>Add genre</span>
+                    </button>
+                  </div>
+                  <div id="homeSectionEditorMessage" class="fieldDescription" role="status">
+                  </div>
+                  <div class="fieldDescription">
+                    Existing advanced sections are kept when you save. Use
+                    <strong>Science Fiction</strong>
+                    for sci-fi and
+                    <strong>Anime</strong>
+                    for anime.
+                  </div>
+                </div>
+                <div class="inputContainer catalogEditor">
+                  <div class="inputLabel">
+                    Add a catalog row
+                  </div>
+                  <div class="fieldDescription">
+                    Pick a catalog from your Stremio addon or use structured discovery (genre, sort and year). The row joins the list above, where you can reorder or turn it off. Each row also gets a "See all" page on Home.
+                  </div>
+                  <div class="catalogEditorGrid">
+                    <label class="catalogField catalogFieldWide"> <span>Catalog</span> <select is="emby-select" id="selCatalogRowCatalog"></select> </label>
+                    <label class="catalogField"> <span>Content</span> <select is="emby-select" id="selCatalogRowType"> <option value="All">Movies and series</option> <option value="Movie">Movies</option> <option value="Series">Series</option> </select> </label>
+                    <label class="catalogField"> <span>Genre</span> <select is="emby-select" id="selCatalogRowGenre"></select> </label>
+                    <label class="catalogField" id="catalogRowSortField"> <span>Sort by</span> <select is="emby-select" id="selCatalogRowSort"> <option value="Popular">Most popular</option> <option value="TopRated">Top rated</option> <option value="Newest">Newest</option> </select> </label>
+                    <label class="catalogField" id="catalogRowYearField"> <span>Year</span> <input type="number" id="txtCatalogRowYear" class="emby-input" min="1900" max="2100" placeholder="Any" /> </label>
+                    <label class="catalogField"> <span>Minimum rating</span> <input type="number" id="txtCatalogRowRating" class="emby-input" min="0" max="10" step="0.5" placeholder="0" /> </label>
+                    <label class="catalogField catalogFieldWide"> <span>Row title</span> <input type="text" id="txtCatalogRowTitle" class="emby-input" placeholder="Generated from your choices" /> </label>
+                  </div>
+                  <div class="flex align-items-center" style="gap: 0.75em; margin-top: 0.75em;">
+                    <button id="btnAddCatalogRow" is="emby-button" type="button" class="emby-button button-submit">
+                      <span>Add catalog row</span>
+                    </button>
+                    <span id="catalogEditorMessage" class="fieldDescription" role="status"></span>
+                  </div>
+                </div>
+                <div class="inputContainer">
+                  <label class="inputLabel inputLabelUnfocused" for="txtHomeRowItemCount">Items per row:</label>
+                  <input type="number" id="txtHomeRowItemCount" class="emby-input" min="1" max="100" />
+                </div>
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                  <label> <input is="emby-checkbox" type="checkbox" id="chkHomeRowShuffle" /> <span>Deterministically shuffle rows</span> </label>
+                  <div class="fieldDescription">
+                    The same row remains stable during the refresh interval.
+                  </div>
+                </div>
+                <div class="inputContainer">
+                  <label class="inputLabel inputLabelUnfocused" for="txtHomeRowShuffleRefreshMinutes">Shuffle refresh (minutes):</label>
+                  <input type="number" id="txtHomeRowShuffleRefreshMinutes" class="emby-input" min="1" max="1440" />
+                </div>
+                <div class="inputContainer">
+                  <label class="inputLabel inputLabelUnfocused" for="txtHomeRowMinimumRating">Minimum rating:</label>
+                  <input type="number" id="txtHomeRowMinimumRating" class="emby-input" min="0" max="10" step="0.1" />
+                  <div class="fieldDescription">
+                    Set to 0 to disable the rating filter.
+                  </div>
+                </div>
+              </div>
+            </section>
+            <section id="mrLibrary" class="mrSection" aria-labelledby="mrLibraryTitle">
+              <div class="mrSectionHeading">
+                <span class="mrSectionNumber" aria-hidden="true">03</span>
+                <div>
+                  <h2 id="mrLibraryTitle" tabindex="-1">Library & cleanup</h2>
+                  <p>Choose where small stream files are created and when to remove watched titles.</p>
+                </div>
+              </div>
+              <div class="mrCard">
+                <h3>Keep only what you save</h3>
+                <p class="mrNotice">Use Jellyfin's Favorite heart to keep a movie or series for later. A favorite from any user keeps the shared title.</p>
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                  <label> <input is="emby-checkbox" type="checkbox" id="chkCleanupUnsavedItems" /> <span>Remove unsaved titles</span> </label>
+                  <div class="fieldDescription">
+                    Automatically remove temporary Mediarow STRM/NFO files and library entries after browsing or playback. Use Jellyfin's Favorite heart to keep a movie, series, season or episode for later. A favorite from any user keeps the shared title. Off by default.
+                  </div>
+                </div>
+                <div class="inputContainer">
+                  <label class="inputLabel inputLabelUnfocused" for="txtUnsavedItemGraceMinutes">Grace period (minutes):</label>
+                  <input is="emby-input" type="number" id="txtUnsavedItemGraceMinutes" class="emby-input" min="1" max="10080" step="1" required />
+                  <div class="fieldDescription">
+                    Minutes since the last reported activity. Default: 5. Active and paused playback are protected.
+                  </div>
+                  <details class="mrDetails">
+                    <summary>How cleanup works</summary>
+                    <div class="mrDetailsBody">
+                      <div class="fieldDescription">
+                        Default: 5 minutes. Wait this long after the last title interaction or playback activity. Active or paused playback and imports are protected. Cleanup checks once a minute, so removal can occur up to about a minute after the grace period. Restarting the server grants a fresh grace period. Works through server requests from Android TV and other Jellyfin clients; no custom client button is needed. Clients do not always report leaving a details page, so the timer uses the last reported title activity. Only indexed Mediarow-generated streams and companion NFO files are removed; artwork and subtitles remain.
+                      </div>
+                    </div>
+                  </details>
+                </div>
+                <p class="fieldDescription">When enabled, this policy takes priority over cleanup after watching. Your watched-cleanup choices are kept.</p>
+              </div>
+              <div class="mrCard">
+                <h3>Library integration</h3>
+                <p class="fieldDescription" style="margin-bottom: 1em;"> When enabled, clicking on a dynamic item will create .strm files in the specified folder. These become real Jellyfin library items with playback tracking, favorites, and ratings. </p>
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                  <label> <input is="emby-checkbox" type="checkbox" id="chkEnablePersistence" /> <span>Enable library integration</span> </label>
+                  <div class="fieldDescription">
+                    When enabled, clicking on a dynamic item will save it to your library as a .strm file.
+                  </div>
+                </div>
+                <div id="persistenceSettings" style="display: none;">
+                  <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="txtMoviesLibraryPath">Movies path:</label>
+                    <input type="text" id="txtMoviesLibraryPath" class="emby-input" placeholder="/mediarow/movies" />
+                    <div class="fieldDescription">
+                      Exact folder for generated movies. Add this same folder as a Movies library in Jellyfin.
+                    </div>
+                  </div>
+                  <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="txtSeriesLibraryPath">Series path:</label>
+                    <input type="text" id="txtSeriesLibraryPath" class="emby-input" placeholder="/mediarow/tv" />
+                    <div class="fieldDescription">
+                      Exact folder for generated series. Add this same folder as a Shows library.
+                    </div>
+                  </div>
+                  <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="txtAnimeLibraryPath">Anime path:</label>
+                    <input type="text" id="txtAnimeLibraryPath" class="emby-input" placeholder="/mediarow/anime" />
+                    <div class="fieldDescription">
+                      Exact folder for anime series. Add this same folder as a Shows library if using anime.
+                    </div>
+                  </div>
+                  <div class="mrNotice">
+                    <h4 style="margin: 0 0 0.5em 0; color: #00a4dc;">Required Jellyfin Libraries</h4>
+                    <p style="margin: 0 0 0.5em 0; color: #999; font-size: 0.9em;"> Add these folders as Jellyfin libraries (Dashboard → Libraries → Add): </p>
+                    <ul id="libraryPathsList" style="margin: 0; padding-left: 1.5em; color: #ccc; font-family: monospace; font-size: 0.9em;">
+                      <li><strong>Movies:</strong> <span id="moviesPath">/mediarow/movies</span></li>
+                      <li><strong>TV Shows:</strong> <span id="showsPath">/mediarow/tv</span></li>
+                      <li><strong>Anime:</strong> <span id="animePath">/mediarow/anime</span></li>
+                    </ul>
+                    <p style="margin: 0.5em 0 0 0; color: #888; font-size: 0.85em;"> These are exact paths: Mediarow does not append movies/tv/anime to them. Use absolute folders writable by the server (container paths when using Docker). Changing paths does not move existing items. </p>
+                  </div>
+                  <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label> <input is="emby-checkbox" type="checkbox" id="chkTriggerLibraryScan" /> <span>Scan automatically after adding a title</span> </label>
+                    <div class="fieldDescription">
+                      Automatically trigger a library scan after creating new items.
+                    </div>
+                  </div>
+                  <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label> <input is="emby-checkbox" type="checkbox" id="chkCreateUnreleasedMedia" /> <span>Create unreleased media</span> </label>
+                    <div class="fieldDescription">
+                      When enabled, creates persistent media even for movies and shows that haven't been released yet. When disabled (default), only creates media for content that has been released.
+                    </div>
+                  </div>
+                  <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label> <input is="emby-checkbox" type="checkbox" id="chkCheckForUpdatesOnView" /> <span>Check for updates on view</span> </label>
+                    <div class="fieldDescription">
+                      When viewing persisted media, check for updates: new aired episodes for TV/anime, or create movie .strm if it has now been released.
                     </div>
                   </div>
                 </div>
-                <div class="languagePanel">
-                  <h4 class="columnTitle">Subtitles</h4>
-                  <div class="panelStep">
-                    <label class="panelStepLabel" for="selSubtitleMode"><b>1</b> When to show subtitles?</label>
-                    <select is="emby-select" id="selSubtitleMode" class="emby-select-withcolor emby-select">
-                      <option value="WhenNeeded">When I don't understand the audio</option>
-                      <option value="Always">Always</option>
-                      <option value="ForcedOnly">Forced only (signs and foreign dialogue)</option>
-                      <option value="Off">Never</option>
-                      <option value="Default">Jellyfin default</option>
-                    </select>
-                    <div class="panelHint" id="subtitleModeDescription"></div>
-                  </div>
-                  <div class="panelStep" id="subtitleLanguageBlock">
-                    <div class="panelStepLabel"><b>2</b> Languages, in order</div>
-                    <ol class="languageList" id="subtitleLanguageList" data-empty="None yet. Add one below."></ol>
-                    <div class="languageAdd">
-                      <select is="emby-select" id="selSubtitleLanguageAdd" class="emby-select-withcolor emby-select" aria-label="Subtitle language to add"></select>
-                      <button is="emby-button" type="button" id="btnAddSubtitleLanguage" class="raised button-submit emby-button">+ Add</button>
+              </div>
+              <details class="mrDetails">
+                <summary>Cleanup after watching</summary>
+                <div class="mrDetailsBody">
+                  <div class="mrCard">
+                    <h3>Watched titles</h3>
+                    <p class="sectionLead">Removes imported Mediarow items after they are watched.</p>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                      <label> <input is="emby-checkbox" type="checkbox" id="chkCleanupWatchedMovies" /> <span>Remove Mediarow movies after watching</span> </label>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                      <label> <input is="emby-checkbox" type="checkbox" id="chkCleanupCompletedSeries" /> <span>Remove fully watched, ended Mediarow series</span> </label>
+                    </div>
+                    <div class="fieldDescription">
+                      Both options are off by default. An hourly scheduled task removes generated STRM/NFO files and their library entries only after every enabled user with access has watched them. Series must be marked Ended by Jellyfin metadata and every episode (including specials) must be watched. Ongoing or unknown-status series, favorites, active playback, unindexed streams, and folders containing other media are kept. Files changed within the last ten minutes are kept until a later run. Artwork and subtitles are left on disk. Removal affects the shared library; watching again requires reimporting.
                     </div>
                   </div>
-                  <div class="panelStep panelOptions" id="subtitleOptionsBlock">
-                    <div class="panelStepLabel"><b>3</b> Options</div>
-                    <label class="panelOption" id="preferNonForcedContainer">
-                      <input is="emby-checkbox" type="checkbox" id="chkLanguagePreferNonForced" />
-                      <span>Prefer full subtitles over forced ones</span>
-                    </label>
-                    <label class="panelOption" id="forcedWhenAudioMatchesContainer">
-                      <input is="emby-checkbox" type="checkbox" id="chkLanguageForcedWhenAudioMatches" />
-                      <span>If I understand the audio, still show forced subtitles</span>
-                    </label>
+                </div>
+              </details>
+              <div class="mrCard">
+                <h3>New episodes</h3>
+                <p class="sectionLead">Adds newly released episodes of saved Mediarow series in the background, so they show up in Next Up without opening the show.</p>
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                  <label> <input is="emby-checkbox" type="checkbox" id="chkEnableEpisodeSync" /> <span>Check for new episodes automatically</span> </label>
+                  <div class="fieldDescription checkboxFieldDescription">
+                    The "Mediarow: Sync New Episodes" task runs hourly and only re-checks a show when it is due: on the interval below, right after a known air date, weekly for ended shows, and with a growing delay after errors.
+                  </div>
+                </div>
+                <div class="inputContainer">
+                  <label class="inputLabel inputLabelUnfocused" for="txtEpisodeSyncIntervalHours">Check each show every (hours):</label>
+                  <input type="number" id="txtEpisodeSyncIntervalHours" class="emby-input" min="1" max="168" />
+                </div>
+                <div class="inputContainer">
+                  <label class="inputLabel inputLabelUnfocused" for="txtEpisodeSyncConcurrency">Shows checked at the same time:</label>
+                  <input type="number" id="txtEpisodeSyncConcurrency" class="emby-input" min="1" max="8" />
+                </div>
+                <div class="flex align-items-center" style="gap: 0.75em;">
+                  <button is="emby-button" type="button" id="btnRunEpisodeSync" class="emby-button button-submit">
+                    <span>Check all shows now</span>
+                  </button>
+                  <span id="episodeSyncMessage" class="fieldDescription" role="status"></span>
+                </div>
+              </div>
+            </section>
+            <section id="mrLanguage" class="mrSection" aria-labelledby="mrLanguageTitle">
+              <div class="mrSectionHeading">
+                <span class="mrSectionNumber" aria-hidden="true">04</span>
+                <div>
+                  <h2 id="mrLanguageTitle" tabindex="-1">Language & subtitles</h2>
+                  <p>Set audio and subtitle preferences for each user, with optional per-series choices.</p>
+                </div>
+              </div>
+              <div class="mrGrid">
+                <div class="mrCard">
+                  <h3>Metadata language</h3>
+                  <p class="sectionLead">The language used for titles and descriptions from the catalog.</p>
+                  <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="selLanguageMode">Language Mode:</label>
+                    <select is="emby-select" id="selLanguageMode" class="emby-select">
+                      <option value="Default">Default (Original Language)</option>
+                      <option value="Override">Override (Force Specific Language)</option>
+                    </select>
+                    <div class="fieldDescription">
+                      Default: Use original titles/descriptions from TVDB/TMDB.
+                      <br>
+                      Override: Request content in your preferred language (translations may not be available for all content).
+                    </div>
+                  </div>
+                  <div class="inputContainer" id="languageOverrideContainer" style="display: none;">
+                    <label class="inputLabel inputLabelUnfocused" for="selPreferredLanguage">Preferred Language:</label>
+                    <select is="emby-select" id="selPreferredLanguage" class="emby-select">
+                      <option value="eng">English</option>
+                      <option value="jpn">Japanese</option>
+                      <option value="spa">Spanish</option>
+                      <option value="fra">French</option>
+                      <option value="deu">German</option>
+                      <option value="ita">Italian</option>
+                      <option value="por">Portuguese</option>
+                      <option value="rus">Russian</option>
+                      <option value="zho">Chinese</option>
+                      <option value="kor">Korean</option>
+                      <option value="ara">Arabic</option>
+                      <option value="hin">Hindi</option>
+                      <option value="tha">Thai</option>
+                      <option value="vie">Vietnamese</option>
+                      <option value="nld">Dutch</option>
+                      <option value="pol">Polish</option>
+                      <option value="tur">Turkish</option>
+                      <option value="swe">Swedish</option>
+                      <option value="nor">Norwegian</option>
+                      <option value="dan">Danish</option>
+                      <option value="fin">Finnish</option>
+                      <option value="ukr">Ukrainian</option>
+                    </select>
+                    <div class="fieldDescription">
+                      Language for titles and metadata. Note: TMDB has better translation support than TVDB. Anime titles from TVDB may still appear in Japanese if no English translation exists.
+                    </div>
+                  </div>
+                </div>
+                <div class="mrCard">
+                  <h3>Subtitle downloads</h3>
+                  <p class="sectionLead">Extra subtitles fetched for Mediarow streams.</p>
+                  <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label> <input is="emby-checkbox" type="checkbox" id="chkEnableSubtitles" /> <span>Enable Automatic Subtitles</span> </label>
+                    <div class="fieldDescription">
+                      Automatically fetch subtitles from OpenSubtitles.com for dynamic items during playback.
+                    </div>
+                  </div>
+                  <div id="subtitleSettings" style="display: none;">
+                    <div class="inputContainer">
+                      <label class="inputLabel inputLabelUnfocused" for="txtOpenSubtitlesApiKey">OpenSubtitles API Key:</label>
+                      <input type="password" id="txtOpenSubtitlesApiKey" class="emby-input" />
+                      <div class="fieldDescription">
+                        API key from
+                        <a href="https://www.opensubtitles.com/consumers" target="_blank">opensubtitles.com</a>
+                        . Required for subtitle fetching.
+                      </div>
+                    </div>
+                    <div class="inputContainer">
+                      <label class="inputLabel inputLabelUnfocused" for="txtSubtitleLanguages">Preferred Languages:</label>
+                      <input type="text" id="txtSubtitleLanguages" class="emby-input" placeholder="en,es,fr" />
+                      <div class="fieldDescription">
+                        Comma-separated ISO 639-1 language codes (e.g., en, es, fr, de, ja). Subtitles will be fetched for each language if available.
+                      </div>
+                    </div>
+                    <div class="inputContainer">
+                      <label class="inputLabel inputLabelUnfocused" for="txtMaxSubtitlesPerLanguage">Max Subtitles Per Language:</label>
+                      <input type="number" id="txtMaxSubtitlesPerLanguage" class="emby-input" min="1" value="1" />
+                      <div class="fieldDescription">
+                        Maximum number of subtitle files to download for each language. Default: 1 (best match only).
+                      </div>
+                    </div>
+                    <div class="inputContainer">
+                      <label class="inputLabel inputLabelUnfocused" for="txtSubtitleCachePath">Subtitle Cache Path:</label>
+                      <input type="text" id="txtSubtitleCachePath" class="emby-input" placeholder="/tmp/jellyfin-mediarow-subtitles" />
+                      <div class="fieldDescription">
+                        Directory where downloaded subtitle files are cached.
+                      </div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                      <label> <input is="emby-checkbox" type="checkbox" id="chkUseJellyfinOSCredentials" /> <span>Use Jellyfin OpenSubtitles Plugin Credentials</span> </label>
+                      <div class="fieldDescription">
+                        If enabled, will attempt to read credentials from the Jellyfin OpenSubtitles plugin for authentication.
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
-              <p class="panelFootnote">AIOStreams results are also sorted by these languages.</p>
-            </div>
-
-            <div class="verticalSection">
-              <h3 class="sectionTitle">Series Overrides</h3>
-              <p class="sectionLead">Override the settings above for specific series. Leave a field empty to keep this user's setting.</p>
-
-              <div class="checkboxContainer checkboxContainer-withDescription">
-                <label>
-                  <input is="emby-checkbox" type="checkbox" id="chkRememberSeriesChoices" />
-                  <span>Remember my track changes per series</span>
-                </label>
-                <div class="fieldDescription">
-                  When this user switches audio or subtitles during an episode, the choice is saved here for that series,
-                  so the next episodes start with the same tracks. Marked as <span class="learnedBadge">Remembered</span>.
+              <div id="languageUserCard" class="mrCard">
+                <h3>Choose a user</h3>
+                <p class="sectionLead"> Select the user whose audio and subtitle preferences you want to configure. Every user has their own settings. Tracks are chosen before playback starts (library videos and Mediarow streams alike), and a track picked by hand always wins. </p>
+                <div class="selectContainer">
+                  <label class="selectLabel" for="selLanguageUser">User</label>
+                  <select is="emby-select" id="selLanguageUser" class="emby-select-withcolor emby-select">
+                  </select>
+                </div>
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                  <label> <input is="emby-checkbox" type="checkbox" id="chkLanguageUserEnabled" /> <span>Enable language preferences for this user</span> </label>
+                  <div class="fieldDescription">
+                    Off: Jellyfin's own track choice (and the global "Prefer original language" option for AIOStreams).
+                  </div>
+                </div>
+                <div class="languageUserSummary" id="languageUserSummary" aria-label="Overview of all users">
                 </div>
               </div>
-
-              <div class="inputContainer" style="margin-bottom: .4em;">
-                <input type="search" id="txtLanguageSeriesSearch" class="emby-input" placeholder="🔍 Search for a series to add..." aria-label="Search for a series to add" autocomplete="off" />
-              </div>
-              <div class="seriesResults" id="languageSeriesResults"></div>
-              <div class="seriesOverrideList" id="seriesOverrideList" data-empty="No series overrides. Use the search above to add one, or change tracks during an episode."></div>
-            </div>
-          </div>
-
-          <div class="verticalSection">
-            <h3 class="sectionTitle">Playback Correction</h3>
-            <p class="sectionLead">Applies to every user with language preferences.</p>
-            <div class="checkboxContainer checkboxContainer-withDescription">
-              <label>
-                <input is="emby-checkbox" type="checkbox" id="chkCorrectTracksAfterPlaybackStart" />
-                <span>Correct tracks after playback starts</span>
-              </label>
-              <div class="fieldDescription">
-                For apps that ignore the server's track choice: about 1.5 seconds after playback starts, Mediarow switches
-                to the preferred track, but only if a different one is playing.
-                Adapted from <a href="https://github.com/Hightmar/jellyfin-langage-failover" target="_blank" rel="noopener">Language Failover</a> by Hightmar (MIT); you don't need both.
-              </div>
-            </div>
-          </div>
-
-          <div class="cardGroupLabel">Library &amp; playback</div>
-
-          <div class="verticalSection">
-            <h3 class="sectionTitle">Skip Intro &amp; Next Episode</h3>
-            <p class="sectionLead">Netflix-style "Skip Intro", "Skip Recap" and a "Next Episode" prompt when the credits start. Works in Jellyfin Web and in apps that support media segments (Android TV, Swiftfin, Findroid and others).</p>
-            <div class="checkboxContainer checkboxContainer-withDescription">
-              <label>
-                <input is="emby-checkbox" type="checkbox" id="chkEnableOnlineSkipSegments" />
-                <span>Find intro and credits times online</span>
-              </label>
-              <div class="fieldDescription">
-                Looks up episodes in <a href="https://aniskip.com" target="_blank" rel="noopener">AniSkip</a> (anime),
-                <a href="https://theintrodb.org" target="_blank" rel="noopener">TheIntroDB</a> and
-                <a href="https://introdb.app" target="_blank" rel="noopener">IntroDB</a>; no API key needed. Applies to every
-                episode without markers of its own, so markers from a plugin such as Intro Skipper always take priority.
-                Times are community-submitted and can be a few seconds off for a different release.
-              </div>
-            </div>
-            <div class="checkboxContainer checkboxContainer-withDescription">
-              <label>
-                <input is="emby-checkbox" type="checkbox" id="chkNetflixStylePlayerButtons" />
-                <span>Netflix-style buttons in Jellyfin Web</span>
-              </label>
-              <div class="fieldDescription">
-                Restyles the skip button and the up-next card. When the credits start, the next episode plays after a 10-second countdown (the "Start Now" button fills up), like Netflix, instead of after the credits. Requires "Play next episode automatically" in the user's playback settings.
-                Each user can choose to skip automatically under Settings &rarr; Playback &rarr; Media segments. Reload the web page after changing this.
-              </div>
-            </div>
-          </div>
-
-          <div class="verticalSection">
-            <h3 class="sectionTitle">Subtitle Settings</h3>
-            <p class="sectionLead">Extra subtitles fetched for Mediarow streams.</p>
-
-            <div class="checkboxContainer checkboxContainer-withDescription">
-              <label>
-                <input is="emby-checkbox" type="checkbox" id="chkEnableSubtitles" />
-                <span>Enable Automatic Subtitles</span>
-              </label>
-              <div class="fieldDescription">
-                Automatically fetch subtitles from OpenSubtitles.com for dynamic items during playback.
-              </div>
-            </div>
-
-            <div id="subtitleSettings" style="display: none;">
-              <div class="inputContainer">
-                <label class="inputLabel inputLabelUnfocused" for="txtOpenSubtitlesApiKey">OpenSubtitles API Key:</label>
-                <input type="password" id="txtOpenSubtitlesApiKey" class="emby-input" />
-                <div class="fieldDescription">
-                  API key from <a href="https://www.opensubtitles.com/consumers" target="_blank">opensubtitles.com</a>.
-                  Required for subtitle fetching.
+              <div id="languageUserSettings">
+                <div class="verticalSection">
+                  <h3 class="sectionTitle">Language Priorities</h3>
+                  <p class="sectionLead">Choose what this user hears and reads. Picking a track by hand during playback always wins.</p>
+                  <div class="languageColumns">
+                    <div class="languagePanel">
+                      <h4 class="columnTitle">Audio</h4>
+                      <div class="panelStep">
+                        <label class="panelStepLabel" for="selAudioMode"><b>1</b> Which audio track?</label>
+                        <select is="emby-select" id="selAudioMode" class="emby-select-withcolor emby-select">
+                          <option value="original">The original language</option>
+                          <option value="specific">A specific language</option>
+                          <option value="default">Jellyfin default</option>
+                        </select>
+                        <div class="panelHint" id="audioModeDescription">
+                        </div>
+                      </div>
+                      <div class="panelStep" id="audioLanguageBlock">
+                        <div class="panelStepLabel">
+                          <b>
+                            2
+                          </b>
+                          <span id="audioListLabel">Languages</span>
+                        </div>
+                        <ol class="languageList" id="audioLanguageList" data-empty="None yet. Add one below.">
+                        </ol>
+                        <div class="languageAdd">
+                          <select is="emby-select" id="selAudioLanguageAdd" class="emby-select-withcolor emby-select" aria-label="Audio language to add">
+                          </select>
+                          <button is="emby-button" type="button" id="btnAddAudioLanguage" class="raised button-submit emby-button">
+                            + Add
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="languagePanel">
+                      <h4 class="columnTitle">Subtitles</h4>
+                      <div class="panelStep">
+                        <label class="panelStepLabel" for="selSubtitleMode"><b>1</b> When to show subtitles?</label>
+                        <select is="emby-select" id="selSubtitleMode" class="emby-select-withcolor emby-select">
+                          <option value="WhenNeeded">When I don't understand the audio</option>
+                          <option value="Always">Always</option>
+                          <option value="ForcedOnly">Forced only (signs and foreign dialogue)</option>
+                          <option value="Off">Never</option>
+                          <option value="Default">Jellyfin default</option>
+                        </select>
+                        <div class="panelHint" id="subtitleModeDescription">
+                        </div>
+                      </div>
+                      <div class="panelStep" id="subtitleLanguageBlock">
+                        <div class="panelStepLabel">
+                          <b>
+                            2
+                          </b>
+                          Languages, in order
+                        </div>
+                        <ol class="languageList" id="subtitleLanguageList" data-empty="None yet. Add one below.">
+                        </ol>
+                        <div class="languageAdd">
+                          <select is="emby-select" id="selSubtitleLanguageAdd" class="emby-select-withcolor emby-select" aria-label="Subtitle language to add">
+                          </select>
+                          <button is="emby-button" type="button" id="btnAddSubtitleLanguage" class="raised button-submit emby-button">
+                            + Add
+                          </button>
+                        </div>
+                      </div>
+                      <div class="panelStep panelOptions" id="subtitleOptionsBlock">
+                        <div class="panelStepLabel">
+                          <b>
+                            3
+                          </b>
+                          Options
+                        </div>
+                        <label class="panelOption" id="preferNonForcedContainer"> <input is="emby-checkbox" type="checkbox" id="chkLanguagePreferNonForced" /> <span>Prefer full subtitles over forced ones</span> </label>
+                        <label class="panelOption" id="forcedWhenAudioMatchesContainer"> <input is="emby-checkbox" type="checkbox" id="chkLanguageForcedWhenAudioMatches" /> <span>If I understand the audio, still show forced subtitles</span> </label>
+                      </div>
+                    </div>
+                  </div>
+                  <p class="panelFootnote">AIOStreams results are also sorted by these languages.</p>
+                </div>
+                <div class="verticalSection">
+                  <h3 class="sectionTitle">Series Overrides</h3>
+                  <p class="sectionLead">Override the settings above for specific series. Leave a field empty to keep this user's setting.</p>
+                  <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label> <input is="emby-checkbox" type="checkbox" id="chkRememberSeriesChoices" /> <span>Remember my track changes per series</span> </label>
+                    <div class="fieldDescription">
+                      When this user switches audio or subtitles during an episode, the choice is saved here for that series, so the next episodes start with the same tracks. Marked as
+                      <span class="learnedBadge">Remembered</span>
+                      .
+                    </div>
+                  </div>
+                  <div class="inputContainer" style="margin-bottom: .4em;">
+                    <input type="search" id="txtLanguageSeriesSearch" class="emby-input" placeholder="🔍 Search for a series to add..." aria-label="Search for a series to add" autocomplete="off" />
+                  </div>
+                  <div class="seriesResults" id="languageSeriesResults">
+                  </div>
+                  <div class="seriesOverrideList" id="seriesOverrideList" data-empty="No series overrides. Use the search above to add one, or change tracks during an episode.">
+                  </div>
                 </div>
               </div>
-
-              <div class="inputContainer">
-                <label class="inputLabel inputLabelUnfocused" for="txtSubtitleLanguages">Preferred Languages:</label>
-                <input type="text" id="txtSubtitleLanguages" class="emby-input" placeholder="en,es,fr" />
-                <div class="fieldDescription">
-                  Comma-separated ISO 639-1 language codes (e.g., en, es, fr, de, ja).
-                  Subtitles will be fetched for each language if available.
+              <div class="mrCard">
+                <h3>Playback correction</h3>
+                <p class="sectionLead">Applies to every user with language preferences.</p>
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                  <label> <input is="emby-checkbox" type="checkbox" id="chkCorrectTracksAfterPlaybackStart" /> <span>Correct tracks after playback starts</span> </label>
+                  <div class="fieldDescription">
+                    For apps that ignore the server's track choice: about 1.5 seconds after playback starts, Mediarow switches to the preferred track, but only if a different one is playing. Adapted from
+                    <a href="https://github.com/Hightmar/jellyfin-langage-failover" target="_blank" rel="noopener">Language Failover</a>
+                    by Hightmar (MIT); you don't need both.
+                  </div>
                 </div>
               </div>
-
-              <div class="inputContainer">
-                <label class="inputLabel inputLabelUnfocused" for="txtMaxSubtitlesPerLanguage">Max Subtitles Per Language:</label>
-                <input type="number" id="txtMaxSubtitlesPerLanguage" class="emby-input" min="1" value="1" />
-                <div class="fieldDescription">
-                  Maximum number of subtitle files to download for each language. Default: 1 (best match only).
+              <div class="mrCard">
+                <h3>Skip intro & next episode</h3>
+                <p class="sectionLead">Netflix-style "Skip Intro", "Skip Recap" and a "Next Episode" prompt when the credits start. Works in Jellyfin Web and in apps that support media segments (Android TV, Swiftfin, Findroid and others).</p>
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                  <label> <input is="emby-checkbox" type="checkbox" id="chkEnableOnlineSkipSegments" /> <span>Find intro and credits times online</span> </label>
+                  <div class="fieldDescription">
+                    Looks up episodes in
+                    <a href="https://aniskip.com" target="_blank" rel="noopener">AniSkip</a>
+                    (anime),
+                    <a href="https://theintrodb.org" target="_blank" rel="noopener">TheIntroDB</a>
+                    and
+                    <a href="https://introdb.app" target="_blank" rel="noopener">IntroDB</a>
+                    ; no API key needed. Applies to every episode without markers of its own, so markers from a plugin such as Intro Skipper always take priority. Times are community-submitted and can be a few seconds off for a different release.
+                  </div>
+                </div>
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                  <label> <input is="emby-checkbox" type="checkbox" id="chkNetflixStylePlayerButtons" /> <span>Netflix-style buttons in Jellyfin Web</span> </label>
+                  <div class="fieldDescription">
+                    Restyles the skip button and the up-next card. When the credits start, the next episode plays after a 10-second countdown (the "Start Now" button fills up), like Netflix, instead of after the credits. Requires "Play next episode automatically" in the user's playback settings. Each user can choose to skip automatically under Settings &rarr; Playback &rarr; Media segments. Reload the web page after changing this.
+                  </div>
                 </div>
               </div>
-
-              <div class="inputContainer">
-                <label class="inputLabel inputLabelUnfocused" for="txtSubtitleCachePath">Subtitle Cache Path:</label>
-                <input type="text" id="txtSubtitleCachePath" class="emby-input" placeholder="/tmp/jellyfin-mediarow-subtitles" />
-                <div class="fieldDescription">
-                  Directory where downloaded subtitle files are cached.
+            </section>
+            <section id="mrAdvanced" class="mrSection" aria-labelledby="mrAdvancedTitle">
+              <div class="mrSectionHeading">
+                <span class="mrSectionNumber" aria-hidden="true">05</span>
+                <div>
+                  <h2 id="mrAdvancedTitle" tabindex="-1">Advanced & diagnostics</h2>
+                  <p>Provider identifiers, caching, and tools to check your saved configuration.</p>
                 </div>
               </div>
-
-              <div class="checkboxContainer checkboxContainer-withDescription">
-                <label>
-                  <input is="emby-checkbox" type="checkbox" id="chkUseJellyfinOSCredentials" />
-                  <span>Use Jellyfin OpenSubtitles Plugin Credentials</span>
-                </label>
-                <div class="fieldDescription">
-                  If enabled, will attempt to read credentials from the Jellyfin OpenSubtitles plugin for authentication.
+              <details class="mrDetails" id="providerAdvancedSettings">
+                <summary>Provider IDs & caching</summary>
+                <div class="mrDetailsBody">
+                  <div class="mrCard">
+                    <h3>Streaming identifiers</h3>
+                    <p class="fieldDescription" style="margin-bottom: 1em;"> Select which provider ID to use for streaming (Embedarr or Direct URL templates). IMDB is recommended as it has the widest support. If the preferred ID is not available, the plugin will fall back to other available IDs. </p>
+                    <div class="inputContainer">
+                      <label class="inputLabel inputLabelUnfocused" for="selMoviePreferredId">Movies:</label>
+                      <select is="emby-select" id="selMoviePreferredId" class="emby-select">
+                        <option value="Imdb">IMDB (Recommended)</option>
+                        <option value="Tmdb">TMDB</option>
+                        <option value="Tvdb">TVDB</option>
+                      </select>
+                      <div class="fieldDescription">
+                        ID used for streaming. Available IDs depend on the Content Source selected above.
+                      </div>
+                    </div>
+                    <div class="inputContainer">
+                      <label class="inputLabel inputLabelUnfocused" for="selTvShowPreferredId">TV Shows:</label>
+                      <select is="emby-select" id="selTvShowPreferredId" class="emby-select">
+                        <option value="Imdb">IMDB (Recommended)</option>
+                        <option value="Tvdb">TVDB</option>
+                        <option value="Tmdb">TMDB</option>
+                      </select>
+                      <div class="fieldDescription">
+                        ID used for streaming. Available IDs depend on the Content Source selected above.
+                      </div>
+                    </div>
+                    <div class="inputContainer">
+                      <label class="inputLabel inputLabelUnfocused" for="selAnimePreferredId">Anime:</label>
+                      <select is="emby-select" id="selAnimePreferredId" class="emby-select">
+                        <option value="Imdb">IMDB (Recommended)</option>
+                        <option value="Tvdb">TVDB</option>
+                        <option value="AniList">AniList</option>
+                        <option value="Tmdb">TMDB</option>
+                      </select>
+                      <div class="fieldDescription">
+                        ID used for streaming. AniList IDs are extracted from TVDB when available.
+                      </div>
+                    </div>
+                  </div>
+                  <div class="mrCard">
+                    <h3>Search cache</h3>
+                    <p class="sectionLead">How long catalog results are kept before they are fetched again.</p>
+                    <div class="inputContainer">
+                      <label class="inputLabel inputLabelUnfocused" for="txtCacheTtlMinutes">Cache TTL (minutes):</label>
+                      <input type="number" id="txtCacheTtlMinutes" class="emby-input" min="1" max="1440" />
+                      <div class="fieldDescription">
+                        How long to cache search results (1-1440 minutes).
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </details>
+              <div id="diagnosticsSection" class="mrCard">
+                <h3>Test configuration</h3>
+                <p class="sectionLead"> Checks the AIOStreams addon, a real stream link, FFmpeg, folders, libraries and API keys at the same time. The test uses the saved settings, so save your changes first. </p>
+                <div class="diagControls">
+                  <button is="emby-button" type="button" id="btnRunDiagnostics" class="raised button-submit emby-button">
+                    <span>Run tests</span>
+                  </button>
+                  <label class="panelOption"> <input type="checkbox" id="chkDiagnosticsProbe" checked /> <span>Also play-test a stream with FFprobe (adds up to 30 seconds)</span> </label>
+                </div>
+                <div id="diagnosticsSummary" class="diagSummary" hidden>
+                </div>
+                <div id="diagnosticsResults" aria-live="polite">
                 </div>
               </div>
-            </div>
-          </div>
-
-          <div class="verticalSection">
-            <h3 class="sectionTitle">Persistence Settings</h3>
-            <p class="fieldDescription" style="margin-bottom: 1em;">
-              When enabled, clicking on a dynamic item will create .strm files in the specified folder.
-              These become real Jellyfin library items with playback tracking, favorites, and ratings.
-            </p>
-
-            <div class="checkboxContainer checkboxContainer-withDescription">
-              <label>
-                <input is="emby-checkbox" type="checkbox" id="chkEnablePersistence" />
-                <span>Enable Persistence</span>
-              </label>
-              <div class="fieldDescription">
-                When enabled, clicking on a dynamic item will save it to your library as a .strm file.
+            </section>
+            <div class="mrSaveBar">
+              <div id="configSaveStatus" role="status" aria-live="polite">
+                Changes apply when you save.
               </div>
+              <button id="btnSave" is="emby-button" type="submit" class="raised button-submit emby-button">
+                <span>Save settings</span>
+              </button>
             </div>
-
-            <div id="persistenceSettings" style="display: none;">
-              <div class="inputContainer">
-                <label class="inputLabel inputLabelUnfocused" for="txtMoviesLibraryPath">Movies path:</label>
-                <input type="text" id="txtMoviesLibraryPath" class="emby-input" placeholder="/mediarow/movies" />
-                <div class="fieldDescription">
-                  Exact folder for generated movies. Add this same folder as a Movies library in Jellyfin.
-                </div>
-              </div>
-              <div class="inputContainer">
-                <label class="inputLabel inputLabelUnfocused" for="txtSeriesLibraryPath">Series path:</label>
-                <input type="text" id="txtSeriesLibraryPath" class="emby-input" placeholder="/mediarow/tv" />
-                <div class="fieldDescription">Exact folder for generated series. Add this same folder as a Shows library.</div>
-              </div>
-              <div class="inputContainer">
-                <label class="inputLabel inputLabelUnfocused" for="txtAnimeLibraryPath">Anime path:</label>
-                <input type="text" id="txtAnimeLibraryPath" class="emby-input" placeholder="/mediarow/anime" />
-                <div class="fieldDescription">Exact folder for anime series. Add this same folder as a Shows library if using anime.</div>
-              </div>
-
-              <div style="background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 1em; margin: 1em 0;">
-                <h4 style="margin: 0 0 0.5em 0; color: #00a4dc;">Required Jellyfin Libraries</h4>
-                <p style="margin: 0 0 0.5em 0; color: #999; font-size: 0.9em;">
-                  Add these folders as Jellyfin libraries (Dashboard → Libraries → Add):
-                </p>
-                <ul id="libraryPathsList" style="margin: 0; padding-left: 1.5em; color: #ccc; font-family: monospace; font-size: 0.9em;">
-                  <li><strong>Movies:</strong> <span id="moviesPath">/mediarow/movies</span></li>
-                  <li><strong>TV Shows:</strong> <span id="showsPath">/mediarow/tv</span></li>
-                  <li><strong>Anime:</strong> <span id="animePath">/mediarow/anime</span></li>
-                </ul>
-                <p style="margin: 0.5em 0 0 0; color: #888; font-size: 0.85em;">
-                  These are exact paths: Mediarow does not append movies/tv/anime to them.
-                  Use absolute folders writable by the server (container paths when using Docker).
-                  Changing paths does not move existing items.
-                </p>
-              </div>
-
-              <div class="checkboxContainer checkboxContainer-withDescription">
-                <label>
-                  <input is="emby-checkbox" type="checkbox" id="chkTriggerLibraryScan" />
-                  <span>Trigger Library Scan</span>
-                </label>
-                <div class="fieldDescription">
-                  Automatically trigger a library scan after creating new items.
-                </div>
-              </div>
-
-              <div class="checkboxContainer checkboxContainer-withDescription">
-                <label>
-                  <input is="emby-checkbox" type="checkbox" id="chkCreateUnreleasedMedia" />
-                  <span>Create unreleased media</span>
-                </label>
-                <div class="fieldDescription">
-                  When enabled, creates persistent media even for movies and shows that haven't been released yet.
-                  When disabled (default), only creates media for content that has been released.
-                </div>
-              </div>
-
-              <div class="checkboxContainer checkboxContainer-withDescription">
-                <label>
-                  <input is="emby-checkbox" type="checkbox" id="chkCheckForUpdatesOnView" />
-                  <span>Check for updates on view</span>
-                </label>
-                <div class="fieldDescription">
-                  When viewing persisted media, check for updates: new aired episodes for TV/anime,
-                  or create movie .strm if it has now been released.
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="cardGroupLabel">Home</div>
-
-          <div class="verticalSection">
-            <h3 class="sectionTitle">Virtual Home Rows</h3>
-            <p class="fieldDescription" style="margin-bottom: 1em;">
-              Renders virtual Popular and genre rows through Mediarow. Items are fetched dynamically and are not imported into the Jellyfin library.
-            </p>
-
-            <div class="checkboxContainer checkboxContainer-withDescription">
-              <label>
-                <input is="emby-checkbox" type="checkbox" id="chkEnableHomeRows" />
-                <span>Enable virtual Home rows</span>
-              </label>
-            </div>
-
-            <div class="checkboxContainer checkboxContainer-withDescription">
-              <label>
-                <input is="emby-checkbox" type="checkbox" id="chkEnableAppLibraries" />
-                <span>Show rows in TV and native apps</span>
-              </label>
-              <div class="fieldDescription checkboxFieldDescription">
-                Publishes each row as a virtual library so Android TV, Swiftfin, Findroid, Kodi and Samsung Tizen apps show them as "Latest" rows. Browsers and the Android/iOS/desktop apps already show the full Mediarow Home.
-              </div>
-            </div>
-
-            <div class="checkboxContainer checkboxContainer-withDescription">
-              <label>
-                <input is="emby-checkbox" type="checkbox" id="chkShowAppLibrariesInWeb" />
-                <span>Also list these libraries in the web client</span>
-              </label>
-              <div class="fieldDescription checkboxFieldDescription">
-                Off by default to avoid showing every row twice in the browser.
-              </div>
-            </div>
-
-            <div class="inputContainer">
-              <div class="inputLabel">What kind of content do you want displayed?</div>
-              <div class="homeContentChoices">
-                <label><input is="emby-checkbox" type="checkbox" id="chkHomeMovies" checked /><span>Movies</span></label>
-                <label><input is="emby-checkbox" type="checkbox" id="chkHomeSeries" checked /><span>Series</span></label>
-                <label><input is="emby-checkbox" type="checkbox" id="chkHomeAnime" /><span>Anime</span></label>
-              </div>
-              <div class="fieldDescription">Movies and series are enabled by default. Anime is separate: enable it to include anime movies and series identified by your provider's metadata.</div>
-            </div>
-
-            <div class="inputContainer">
-              <div class="inputLabel">Home rows and order:</div>
-              <div class="fieldDescription">Home shows separate Popular rows and the first six checked genres, alternating movie and series categories (plus Anime if enabled). Category filters show every checked genre for that content type. Your row order is preserved in both views.</div>
-              <div class="fieldDescription">Check the rows to show, then drag checked rows into order. Up/Down buttons also work with a keyboard or on a phone. Save, then return to Home to apply the changes without restarting Jellyfin.</div>
-              <div id="homeSectionChoices" class="mediarowHomeSectionChoices" aria-live="polite"></div>
-              <div class="flex align-items-center" style="gap: 0.5em; margin-top: 0.75em;">
-                <input type="text" id="txtNewHomeGenre" class="emby-input" placeholder="Add a genre row" aria-label="New genre row" />
-                <button id="btnAddHomeGenre" is="emby-button" type="button" class="emby-button button-submit">
-                  <span>Add genre</span>
-                </button>
-              </div>
-              <div id="homeSectionEditorMessage" class="fieldDescription" role="status"></div>
-              <div class="fieldDescription">Existing advanced sections are kept when you save. Use <strong>Science Fiction</strong> for sci-fi and <strong>Anime</strong> for anime.</div>
-            </div>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="txtHomeRowItemCount">Items per row:</label>
-              <input type="number" id="txtHomeRowItemCount" class="emby-input" min="1" max="100" />
-            </div>
-
-            <div class="checkboxContainer checkboxContainer-withDescription">
-              <label>
-                <input is="emby-checkbox" type="checkbox" id="chkHomeRowShuffle" />
-                <span>Deterministically shuffle rows</span>
-              </label>
-              <div class="fieldDescription">The same row remains stable during the refresh interval.</div>
-            </div>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="txtHomeRowShuffleRefreshMinutes">Shuffle refresh (minutes):</label>
-              <input type="number" id="txtHomeRowShuffleRefreshMinutes" class="emby-input" min="1" max="1440" />
-            </div>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="txtHomeRowMinimumRating">Minimum rating:</label>
-              <input type="number" id="txtHomeRowMinimumRating" class="emby-input" min="0" max="10" step="0.1" />
-              <div class="fieldDescription">Set to 0 to disable the rating filter.</div>
-            </div>
-
-          </div>
-
-          <div class="verticalSection">
-            <h3 class="sectionTitle">Watched item cleanup (optional)</h3>
-            <p class="sectionLead">Removes imported Mediarow items after they are watched.</p>
-            <div class="checkboxContainer checkboxContainer-withDescription">
-              <label>
-                <input is="emby-checkbox" type="checkbox" id="chkCleanupWatchedMovies" />
-                <span>Remove Mediarow movies after watching</span>
-              </label>
-            </div>
-            <div class="checkboxContainer checkboxContainer-withDescription">
-              <label>
-                <input is="emby-checkbox" type="checkbox" id="chkCleanupCompletedSeries" />
-                <span>Remove fully watched, ended Mediarow series</span>
-              </label>
-            </div>
-            <div class="fieldDescription">
-              Both options are off by default. An hourly scheduled task removes generated STRM/NFO files
-              and their library entries only after every enabled user with access has watched them.
-              Series must be marked Ended by Jellyfin metadata and every episode (including specials) must be watched.
-              Ongoing or unknown-status series, favorites, active playback, unindexed streams, and folders containing
-              other media are kept. Files changed within the last ten minutes are kept until a later run.
-              Artwork and subtitles are left on disk. Removal affects the shared library; watching again requires reimporting.
-            </div>
-          </div>
-
-          <div class="verticalSection">
-            <h3 class="sectionTitle">Cache Settings</h3>
-            <p class="sectionLead">How long catalog results are kept before they are fetched again.</p>
-
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="txtCacheTtlMinutes">Cache TTL (minutes):</label>
-              <input type="number" id="txtCacheTtlMinutes" class="emby-input" min="1" max="1440" />
-              <div class="fieldDescription">How long to cache search results (1-1440 minutes).</div>
-            </div>
-          </div>
-
-          <div>
-            <button id="btnSave" is="emby-button" type="submit" class="raised button-submit block emby-button">
-              <span>Save</span>
-            </button>
-          </div>
-        </form>
+          </form>
+        </div>
       </div>
-    </div>
-
-    <script type="text/javascript">
+      <script type="text/javascript">
       (function () {
         'use strict';
 
         const pluginId = '68cff731-4588-4ab3-aa0d-9ca73648679a';
         const page = document.querySelector('#mediarowConfigPage');
         const form = document.querySelector('#mediarowForm');
+        const saveButton = document.querySelector('#btnSave');
+        const saveStatus = document.querySelector('#configSaveStatus');
+        const metadataApiSettings = document.querySelector('#metadataApiSettings');
+        const playbackSetupNote = document.querySelector('#playbackSetupNote');
+        let configurationLoaded = false;
+        let isSaving = false;
+        saveButton.disabled = true;
+
+        // Keep the configuration script usable in older Qt WebEngine clients.
+        function valueOrDefault(value, fallback) {
+          return value === undefined || value === null ? fallback : value;
+        }
+
+        // Buttons avoid changing Jellyfin's SPA route when jumping between settings.
+        [
+          ['navConnections', 'mrConnections'], ['navHomeRows', 'mrHomeRows'],
+          ['navLibrary', 'mrLibrary'], ['navLanguage', 'mrLanguage'],
+          ['navAdvanced', 'mrAdvanced']
+        ].forEach(function (entry) {
+          document.querySelector('#' + entry[0]).addEventListener('click', function () {
+            const section = document.querySelector('#' + entry[1]);
+            section.scrollIntoView({ block: 'start' });
+            document.querySelector('#' + entry[1] + 'Title').focus({ preventScroll: true });
+          });
+        });
+
+        function markUnsaved() {
+          if (configurationLoaded && !isSaving) saveStatus.textContent = 'You have unsaved changes.';
+        }
+        form.addEventListener('input', markUnsaved);
+        form.addEventListener('change', markUnsaved);
+        // Reveal a collapsed field before the browser focuses an invalid value.
+        form.addEventListener('invalid', function (event) {
+          let ancestor = event.target.parentElement;
+          while (ancestor && ancestor !== form) {
+            if (ancestor.tagName === 'DETAILS') ancestor.open = true;
+            ancestor = ancestor.parentElement;
+          }
+        }, true);
+
+
 
         // Cache DOM elements - inputs
         const chkEnabled = document.querySelector('#chkEnabled');
@@ -937,6 +1143,11 @@
         const txtAIOStreamsUrl = document.querySelector('#txtAIOStreamsUrl');
         const chkEnableHlsProbing = document.querySelector('#chkEnableHlsProbing');
         const chkPreferOriginalLanguageStreams = document.querySelector('#chkPreferOriginalLanguageStreams');
+        const chkEnableStreamRecovery = document.querySelector('#chkEnableStreamRecovery');
+        const btnRunDiagnostics = document.querySelector('#btnRunDiagnostics');
+        const chkDiagnosticsProbe = document.querySelector('#chkDiagnosticsProbe');
+        const diagnosticsSummary = document.querySelector('#diagnosticsSummary');
+        const diagnosticsResults = document.querySelector('#diagnosticsResults');
         const chkEnableOnlineSkipSegments = document.querySelector('#chkEnableOnlineSkipSegments');
         const chkNetflixStylePlayerButtons = document.querySelector('#chkNetflixStylePlayerButtons');
         const aiostreamsSettings = document.querySelector('#aiostreamsSettings');
@@ -959,7 +1170,14 @@
         const chkCreateUnreleasedMedia = document.querySelector('#chkCreateUnreleasedMedia');
         const chkCheckForUpdatesOnView = document.querySelector('#chkCheckForUpdatesOnView');
         const chkCleanupWatchedMovies = document.querySelector('#chkCleanupWatchedMovies');
+        const chkEnableEpisodeSync = document.querySelector('#chkEnableEpisodeSync');
+        const txtEpisodeSyncIntervalHours = document.querySelector('#txtEpisodeSyncIntervalHours');
+        const txtEpisodeSyncConcurrency = document.querySelector('#txtEpisodeSyncConcurrency');
+        const btnRunEpisodeSync = document.querySelector('#btnRunEpisodeSync');
+        const episodeSyncMessage = document.querySelector('#episodeSyncMessage');
         const chkCleanupCompletedSeries = document.querySelector('#chkCleanupCompletedSeries');
+        const chkCleanupUnsavedItems = document.querySelector('#chkCleanupUnsavedItems');
+        const txtUnsavedItemGraceMinutes = document.querySelector('#txtUnsavedItemGraceMinutes');
         const persistenceSettingsContainer = document.querySelector('#persistenceSettings');
         const moviesPathSpan = document.querySelector('#moviesPath');
         const showsPathSpan = document.querySelector('#showsPath');
@@ -1008,6 +1226,7 @@
         let draggedHomeSectionId = null;
 
         function moveHomeSection(id, targetIndex) {
+          markUnsaved();
           const sourceIndex = homeRowOrder.indexOf(id);
           if (sourceIndex === -1 || targetIndex < 0 || targetIndex >= homeRowOrder.length) {
             return;
@@ -1113,6 +1332,20 @@
             label.appendChild(title);
             row.appendChild(label);
 
+            if (option.kind === 'catalog') {
+              const badge = document.createElement('span');
+              badge.className = 'homeSectionKind';
+              badge.textContent = 'Catalog';
+              row.appendChild(badge);
+              const remove = document.createElement('button');
+              remove.type = 'button';
+              remove.className = 'emby-button button-flat';
+              remove.textContent = 'Remove';
+              remove.setAttribute('aria-label', 'Remove catalog row ' + option.title);
+              remove.addEventListener('click', function () { removeCatalogRow(option.id); });
+              row.appendChild(remove);
+            }
+
             if (selectedIndex !== -1) {
               const position = document.createElement('span');
               position.className = 'fieldDescription';
@@ -1165,12 +1398,25 @@
           });
 
           const managedIds = new Set(homeSectionOptions.map(function (option) { return option.id; }));
+          homeCatalogs = (config.HomeCatalogs || []).filter(function (selection) { return selection && selection.Id; })
+            .map(function (selection) { return Object.assign({}, selection); });
+          homeCatalogs.forEach(function (selection) {
+            addCatalogOption(selection);
+            managedIds.add(catalogSectionPrefix + selection.Id);
+          });
           storedAdvancedHomeSections = sections.filter(function (section) { return !managedIds.has(section.Id); });
           if (sections.length > 0) {
             homeRowOrder = sections
               .filter(function (section) { return managedIds.has(section.Id) && section.Enabled !== false; })
               .sort(function (left, right) { return left.Order - right.Order; })
               .map(function (section) { return section.Id; });
+            // Same rule as the server: catalogs not yet in the ordered list go last.
+            homeCatalogs.forEach(function (selection) {
+              const id = catalogSectionPrefix + selection.Id;
+              if (selection.Enabled !== false && !sections.some(function (section) { return section.Id === id; })) {
+                homeRowOrder.push(id);
+              }
+            });
           } else {
             homeRowOrder = ['Mediarow_ContinueWatching'];
             if (config.EnablePopularHomeRow !== false) {
@@ -1187,11 +1433,17 @@
                 homeRowOrder.push(option.id);
               }
             });
+            homeCatalogs.forEach(function (selection) {
+              if (selection.Enabled !== false) {
+                homeRowOrder.push(catalogSectionPrefix + selection.Id);
+              }
+            });
           }
           renderHomeSectionChoices();
         }
 
         function addHomeGenre() {
+          markUnsaved();
           const genre = txtNewHomeGenre.value.trim();
           if (!genre) {
             homeSectionEditorMessage.textContent = 'Enter a genre name first.';
@@ -1256,6 +1508,164 @@
           return selectedSections.concat(disabledSections, advancedSections);
         }
 
+        // Admin catalog rows: stored in HomeCatalogs, ordered and switched on/off in the row list above.
+        const catalogSectionPrefix = 'MediarowCatalog_';
+        const selCatalogRowCatalog = document.querySelector('#selCatalogRowCatalog');
+        const selCatalogRowType = document.querySelector('#selCatalogRowType');
+        const selCatalogRowGenre = document.querySelector('#selCatalogRowGenre');
+        const selCatalogRowSort = document.querySelector('#selCatalogRowSort');
+        const txtCatalogRowYear = document.querySelector('#txtCatalogRowYear');
+        const txtCatalogRowRating = document.querySelector('#txtCatalogRowRating');
+        const txtCatalogRowTitle = document.querySelector('#txtCatalogRowTitle');
+        const catalogRowSortField = document.querySelector('#catalogRowSortField');
+        const catalogRowYearField = document.querySelector('#catalogRowYearField');
+        const btnAddCatalogRow = document.querySelector('#btnAddCatalogRow');
+        const catalogEditorMessage = document.querySelector('#catalogEditorMessage');
+        const fallbackGenres = homeSectionPresets.filter(function (option) { return option.genre; })
+          .map(function (option) { return option.genre; });
+        let homeCatalogs = [];
+        let catalogOptions = null;
+
+        function enumName(value, names) {
+          return typeof value === 'number' ? (names[value] || names[0]) : (value || names[0]);
+        }
+
+        function addCatalogOption(selection) {
+          homeSectionOptions.push({
+            id: catalogSectionPrefix + selection.Id,
+            title: selection.Title,
+            kind: 'catalog',
+            catalogId: selection.Id
+          });
+        }
+
+        function removeCatalogRow(sectionId) {
+          homeCatalogs = homeCatalogs.filter(function (selection) { return catalogSectionPrefix + selection.Id !== sectionId; });
+          homeSectionOptions = homeSectionOptions.filter(function (option) { return option.id !== sectionId; });
+          homeRowOrder = homeRowOrder.filter(function (id) { return id !== sectionId; });
+          renderHomeSectionChoices();
+          homeSectionEditorMessage.textContent = 'Catalog row removed. Save to apply.';
+        }
+
+        function clearOptions(select) {
+          while (select.firstChild) {
+            select.removeChild(select.firstChild);
+          }
+        }
+
+        function appendOption(select, value, text) {
+          const option = document.createElement('option');
+          option.value = value;
+          option.textContent = text;
+          select.appendChild(option);
+        }
+
+        function selectedCatalogDescriptor() {
+          const value = selCatalogRowCatalog.value || 'auto';
+          if (!catalogOptions || value.indexOf('c:') !== 0) {
+            return null;
+          }
+          return catalogOptions.Catalogs[parseInt(value.slice(2), 10)] || null;
+        }
+
+        function refreshCatalogEditor() {
+          const descriptor = selectedCatalogDescriptor();
+          const isStremio = !!descriptor && enumName(descriptor.Source, ['Auto', 'Stremio', 'Tmdb']) === 'Stremio';
+          if (descriptor) {
+            selCatalogRowType.value = descriptor.Type === 'movie' ? 'Movie' : 'Series';
+          }
+          selCatalogRowType.disabled = !!descriptor;
+          catalogRowSortField.hidden = isStremio;
+          catalogRowYearField.hidden = isStremio;
+
+          const previousGenre = selCatalogRowGenre.value;
+          let genres;
+          if (descriptor) {
+            genres = descriptor.Genres || [];
+          } else if (catalogOptions) {
+            const type = selCatalogRowType.value;
+            genres = (type === 'Series' ? catalogOptions.SeriesGenres
+              : type === 'Movie' ? catalogOptions.MovieGenres
+                : catalogOptions.MovieGenres.concat(catalogOptions.SeriesGenres))
+              .filter(function (genre, index, all) { return all.indexOf(genre) === index; });
+          } else {
+            genres = fallbackGenres;
+          }
+          clearOptions(selCatalogRowGenre);
+          appendOption(selCatalogRowGenre, '', descriptor && !descriptor.SupportsGenre ? 'No genre filter (not supported)' : 'Any genre');
+          if (!descriptor || descriptor.SupportsGenre) {
+            genres.forEach(function (genre) { appendOption(selCatalogRowGenre, genre, genre); });
+          }
+          selCatalogRowGenre.value = genres.indexOf(previousGenre) !== -1 ? previousGenre : '';
+        }
+
+        function renderCatalogChoices() {
+          clearOptions(selCatalogRowCatalog);
+          appendOption(selCatalogRowCatalog, 'auto', 'Discover (uses your catalog provider)');
+          ((catalogOptions && catalogOptions.Catalogs) || []).forEach(function (descriptor, index) {
+            const source = enumName(descriptor.Source, ['Auto', 'Stremio', 'Tmdb']);
+            appendOption(selCatalogRowCatalog, 'c:' + index,
+              descriptor.Name + ' \u00b7 ' + (descriptor.Type === 'movie' ? 'Movies' : 'Series') +
+              (source === 'Tmdb' ? ' (TMDB)' : ' (addon)'));
+          });
+          selCatalogRowCatalog.value = 'auto';
+          refreshCatalogEditor();
+        }
+
+        async function loadCatalogChoices() {
+          renderCatalogChoices();
+          const apiClient = window.ApiClient;
+          if (!apiClient || !apiClient.fetch || !apiClient.getUrl) {
+            return;
+          }
+          try {
+            const response = await apiClient.fetch({ type: 'GET', url: apiClient.getUrl('Mediarow/Home/Catalogs') });
+            catalogOptions = await response.json();
+            renderCatalogChoices();
+            if (!catalogOptions.StremioConfigured && !catalogOptions.TmdbConfigured) {
+              catalogEditorMessage.textContent = 'Add a Stremio catalog addon or a TMDB API key to get more catalogs.';
+            }
+          } catch (error) {
+            console.log('Mediarow: could not load catalog list', error);
+          }
+        }
+
+        function describeCatalogRow(selection, descriptor) {
+          const typeWord = { All: 'Titles', Movie: 'Movies', Series: 'Series' }[selection.MediaType];
+          if (descriptor && selection.Source === 'Stremio') {
+            return (selection.Genre ? selection.Genre + ' \u00b7 ' : '') + descriptor.Name;
+          }
+          const sortWord = { Popular: 'Popular', TopRated: 'Top Rated', Newest: 'New' }[selection.Sort];
+          return [sortWord, selection.Genre, typeWord].filter(Boolean).join(' ') +
+            (selection.Year ? ' (' + selection.Year + ')' : '');
+        }
+
+        function addCatalogRow() {
+          const descriptor = selectedCatalogDescriptor();
+          const source = descriptor ? enumName(descriptor.Source, ['Auto', 'Stremio', 'Tmdb']) : 'Auto';
+          const year = parseInt(txtCatalogRowYear.value, 10);
+          const rating = parseFloat(txtCatalogRowRating.value);
+          const selection = {
+            Id: 'c' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36),
+            Enabled: true,
+            Order: homeCatalogs.length,
+            Source: source,
+            CatalogId: source === 'Stremio' ? descriptor.CatalogId : null,
+            MediaType: selCatalogRowType.value || 'All',
+            Genre: selCatalogRowGenre.value || null,
+            Sort: source === 'Stremio' ? 'Popular' : (selCatalogRowSort.value || 'Popular'),
+            Year: source !== 'Stremio' && year >= 1900 && year <= 2100 ? year : null,
+            MinimumRating: rating > 0 && rating <= 10 ? rating : 0
+          };
+          selection.Title = (txtCatalogRowTitle.value || '').trim() || describeCatalogRow(selection, descriptor);
+          homeCatalogs.push(selection);
+          addCatalogOption(selection);
+          homeRowOrder.push(catalogSectionPrefix + selection.Id);
+          txtCatalogRowTitle.value = '';
+          renderHomeSectionChoices();
+          catalogEditorMessage.textContent = '"' + selection.Title + '" added to the row list. Save to apply.';
+        }
+
         // Cache DOM elements - selects
         const selCatalogProvider = document.querySelector('#selCatalogProvider');
         const selStreamProvider = document.querySelector('#selStreamProvider');
@@ -1278,6 +1688,7 @@
           const provider = selCatalogProvider.value;
           stremioCatalogSettings.style.display = provider === 'StremioAddon' ? 'block' : 'none';
           apiKeyInfo.style.display = provider === 'StremioAddon' ? 'block' : 'none';
+          metadataApiSettings.open = provider === 'Direct';
         }
 
         function updateLanguageVisibility() {
@@ -1290,6 +1701,7 @@
           embedarrSettings.style.display = provider === 'Embedarr' ? 'block' : 'none';
           directSettings.style.display = provider === 'Direct' ? 'block' : 'none';
           aiostreamsSettings.style.display = provider === 'AIOStreams' ? 'block' : 'none';
+          updateSetupNotes();
         }
 
         function updateAnimeAudioTracksVisibility() {
@@ -1302,9 +1714,15 @@
 
         function updatePersistenceSettingsVisibility() {
           persistenceSettingsContainer.style.display = chkEnablePersistence.checked ? 'block' : 'none';
+          updateSetupNotes();
           if (chkEnablePersistence.checked) {
             updateLibraryPaths();
           }
+        }
+
+        function updateSetupNotes() {
+          playbackSetupNote.hidden = selStreamProvider.value !== 'AIOStreams' ||
+            (chkEnablePersistence.checked && chkTriggerLibraryScan.checked);
         }
 
         function updateLibraryPaths() {
@@ -1340,7 +1758,7 @@
           Dashboard.showLoadingMsg();
           try {
             const config = await window.ApiClient.getPluginConfiguration(pluginId);
-            console.log('Mediarow: Loaded config', config);
+            // Never log credentials or private addon URLs.
 
             // Checkboxes
             chkEnabled.checked = config.Enabled ?? true;
@@ -1369,6 +1787,7 @@
             txtAIOStreamsUrl.value = config.AIOStreamsUrl || '';
             chkEnableHlsProbing.checked = config.EnableHlsProbing ?? false;
             chkPreferOriginalLanguageStreams.checked = config.PreferOriginalLanguageStreams ?? true;
+            chkEnableStreamRecovery.checked = config.EnableStreamRecovery ?? true;
             chkEnableOnlineSkipSegments.checked = config.EnableOnlineSkipSegments ?? true;
             chkNetflixStylePlayerButtons.checked = config.NetflixStylePlayerButtons ?? true;
 
@@ -1390,12 +1809,19 @@
             chkCheckForUpdatesOnView.checked = config.CheckForUpdatesOnView ?? true;
             chkCleanupWatchedMovies.checked = config.CleanupWatchedMovies ?? false;
             chkCleanupCompletedSeries.checked = config.CleanupCompletedSeries ?? false;
+            chkCleanupUnsavedItems.checked = config.CleanupUnsavedItems ?? false;
+            txtUnsavedItemGraceMinutes.value = config.UnsavedItemGraceMinutes ?? 5;
+            txtUnsavedItemGraceMinutes.disabled = !chkCleanupUnsavedItems.checked;
+            chkEnableEpisodeSync.checked = config.EnableEpisodeSync ?? true;
+            txtEpisodeSyncIntervalHours.value = config.EpisodeSyncIntervalHours ?? 6;
+            txtEpisodeSyncConcurrency.value = config.EpisodeSyncConcurrency ?? 3;
 
             // Virtual Home row settings
             chkEnableHomeRows.checked = config.EnableHomeRows ?? true;
             chkEnableAppLibraries.checked = config.EnableAppLibraries ?? true;
             chkShowAppLibrariesInWeb.checked = config.ShowAppLibrariesInWeb ?? false;
             loadHomeSectionChoices(config);
+            loadCatalogChoices();
             txtHomeRowItemCount.value = config.HomeRowItemCount ?? 20;
             const contentCategories = config.HomeRowContentCategories ??
               (config.HomeRowContentType === 'Movies' ? ['Movies'] :
@@ -1430,8 +1856,12 @@
             updatePersistenceSettingsVisibility();
             updateLibraryPaths();
             await loadLanguagePreferences(config);
+            configurationLoaded = true;
+            saveButton.disabled = false;
+            saveStatus.textContent = 'Changes apply when you save.';
           } catch (err) {
             console.error('Mediarow: Failed to load configuration', err);
+            saveStatus.textContent = 'Settings could not be loaded. Reopen this page to retry.';
             Dashboard.alert('Mediarow could not load its configuration. Please retry in your server browser dashboard and check the console for details.');
           } finally {
             Dashboard.hideLoadingMsg();
@@ -1441,6 +1871,13 @@
 
         async function saveConfig(e) {
           e.preventDefault();
+          if (!configurationLoaded || isSaving) return;
+          isSaving = true;
+          saveButton.disabled = true;
+          saveStatus.textContent = 'Saving settings…';
+          const lockedControls = Array.from(form.querySelectorAll('input, select, button'))
+            .filter(function (control) { return !control.disabled; });
+          lockedControls.forEach(function (control) { control.disabled = true; });
           Dashboard.showLoadingMsg();
           try {
             const config = await window.ApiClient.getPluginConfiguration(pluginId);
@@ -1472,6 +1909,7 @@
             config.AIOStreamsUrl = txtAIOStreamsUrl.value.trim();
             config.EnableHlsProbing = chkEnableHlsProbing.checked;
             config.PreferOriginalLanguageStreams = chkPreferOriginalLanguageStreams.checked;
+            config.EnableStreamRecovery = chkEnableStreamRecovery.checked;
             config.EnableOnlineSkipSegments = chkEnableOnlineSkipSegments.checked;
             config.NetflixStylePlayerButtons = chkNetflixStylePlayerButtons.checked;
 
@@ -1506,6 +1944,11 @@
             config.CheckForUpdatesOnView = chkCheckForUpdatesOnView.checked;
             config.CleanupWatchedMovies = chkCleanupWatchedMovies.checked;
             config.CleanupCompletedSeries = chkCleanupCompletedSeries.checked;
+            config.CleanupUnsavedItems = chkCleanupUnsavedItems.checked;
+            config.UnsavedItemGraceMinutes = Math.max(1, Math.min(10080, parseInt(txtUnsavedItemGraceMinutes.value, 10) || 5));
+            config.EnableEpisodeSync = chkEnableEpisodeSync.checked;
+            config.EpisodeSyncIntervalHours = Math.min(168, Math.max(1, parseInt(txtEpisodeSyncIntervalHours.value, 10) || 6));
+            config.EpisodeSyncConcurrency = Math.min(8, Math.max(1, parseInt(txtEpisodeSyncConcurrency.value, 10) || 3));
 
             // Virtual Home row settings
             config.EnableHomeRows = chkEnableHomeRows.checked;
@@ -1524,6 +1967,10 @@
             config.HomeRowShuffleRefreshMinutes = parseInt(txtHomeRowShuffleRefreshMinutes.value, 10) || 60;
             config.HomeRowMinimumRating = parseFloat(txtHomeRowMinimumRating.value) || 0;
             config.HomeSections = buildHomeSectionConfig(config);
+            config.HomeCatalogs = homeCatalogs.map(function (selection, index) {
+              // On/off and order live in HomeSections; the catalog entry only describes the query.
+              return Object.assign({}, selection, { Enabled: true, Order: index });
+            });
 
             // Stremio Catalog settings - strip /manifest.json if user pasted full manifest URL
             var stremioUrl = txtStremioCatalogUrl.value.trim();
@@ -1545,11 +1992,17 @@
             saveLanguagePreferences(config);
 
             await window.ApiClient.updatePluginConfiguration(pluginId, config);
+            saveStatus.textContent = 'Settings saved. Return to Home to see your changes.';
             Dashboard.processPluginConfigurationUpdateResult();
           } catch (err) {
             console.error('Mediarow: Failed to save configuration', err);
+            saveStatus.textContent = 'Settings were not saved. Please try again.';
             Dashboard.alert('Failed to save configuration. Check console for details.');
           } finally {
+            lockedControls.forEach(function (control) { control.disabled = false; });
+            isSaving = false;
+            saveButton.disabled = false;
+            if (saveStatus.textContent === 'Saving settings…') saveStatus.textContent = 'Changes have not been saved.';
             Dashboard.hideLoadingMsg();
           }
         }
@@ -2007,18 +2460,176 @@
           }
         });
 
+        // ==================== Test configuration ====================
+        const diagnosticCategories = ['Setup', 'Streams', 'Playback', 'Storage', 'Metadata'];
+        const diagnosticColors = { Pass: '#52b54b', Warning: '#e3a33a', Fail: '#e05555', Skipped: 'rgba(128, 128, 128, .55)' };
+        const diagnosticLabels = { Pass: 'Pass', Warning: 'Check', Fail: 'Fail', Skipped: 'Skipped' };
+        let diagnosticsRunning = false;
+
+        function formatDuration(ms) {
+          return ms >= 1000 ? (ms / 1000).toFixed(1) + ' s' : Math.max(0, Math.round(ms)) + ' ms';
+        }
+
+        function diagnosticsHeadline(report) {
+          if (report.Status === 'Pass') return 'Everything works';
+          const problems = report.Failed + report.Warnings;
+          if (report.Status === 'Fail') return report.Failed === 1 ? '1 problem needs fixing' : report.Failed + ' problems need fixing';
+          return problems === 1 ? '1 thing to check' : problems + ' things to check';
+        }
+
+        function renderDiagnosticCheck(check, index) {
+          const hasBody = !!check.Hint || (check.Details && Object.keys(check.Details).length > 0);
+          const container = document.createElement(hasBody ? 'details' : 'div');
+          container.className = 'diagCheck is-' + check.Status;
+          container.style.animationDelay = (index * 35) + 'ms';
+          if (hasBody && check.Status === 'Fail') container.open = true;
+
+          const row = document.createElement(hasBody ? 'summary' : 'div');
+          row.className = 'diagRow';
+          row.appendChild(textElement('span', 'diagPill', diagnosticLabels[check.Status] || check.Status));
+          row.appendChild(textElement('span', 'diagName', check.Name));
+          row.appendChild(textElement('span', 'diagMessage', check.Message));
+          row.appendChild(textElement('span', 'diagTime', check.Status === 'Skipped' ? '' : formatDuration(check.DurationMs)));
+          container.appendChild(row);
+
+          if (hasBody) {
+            const body = document.createElement('div');
+            body.className = 'diagBody';
+            if (check.Hint) body.appendChild(textElement('p', 'diagHint', check.Hint));
+            if (check.Details) {
+              const list = document.createElement('dl');
+              list.className = 'diagDetails';
+              Object.keys(check.Details).forEach(function (key) {
+                list.appendChild(textElement('dt', '', key));
+                list.appendChild(textElement('dd', '', check.Details[key]));
+              });
+              body.appendChild(list);
+            }
+            container.appendChild(body);
+          }
+          return container;
+        }
+
+        function renderDiagnostics(report) {
+          clearChildren(diagnosticsSummary);
+          clearChildren(diagnosticsResults);
+          diagnosticsSummary.hidden = false;
+          diagnosticsSummary.dataset.status = report.Status;
+
+          const headline = document.createElement('div');
+          headline.className = 'diagHeadline';
+          headline.appendChild(textElement('strong', '', diagnosticsHeadline(report)));
+          const started = new Date(report.StartedAt);
+          headline.appendChild(textElement('span', 'diagMeta',
+            'Ran ' + started.toLocaleString() + ' \u00B7 ' + formatDuration(report.DurationMs) + ' \u00B7 v' + report.PluginVersion));
+          diagnosticsSummary.appendChild(headline);
+
+          const bar = document.createElement('div');
+          bar.className = 'diagBar';
+          const counts = document.createElement('div');
+          counts.className = 'diagCounts';
+          [['Pass', report.Passed, 'passed'], ['Warning', report.Warnings, 'to check'], ['Fail', report.Failed, 'failed'], ['Skipped', report.Skipped, 'skipped']]
+            .forEach(function (entry) {
+              const segment = document.createElement('span');
+              segment.style.flexGrow = String(entry[1]);
+              segment.style.background = diagnosticColors[entry[0]];
+              bar.appendChild(segment);
+              if (entry[1] > 0) {
+                const count = textElement('span', '', entry[1] + ' ' + entry[2]);
+                count.style.setProperty('--dot', diagnosticColors[entry[0]]);
+                counts.appendChild(count);
+              }
+            });
+          diagnosticsSummary.appendChild(bar);
+          diagnosticsSummary.appendChild(counts);
+
+          let index = 0;
+          diagnosticCategories.concat(report.Checks.map(function (check) { return check.Category; }))
+            .filter(function (category, position, all) { return all.indexOf(category) === position; })
+            .forEach(function (category) {
+              const checks = report.Checks.filter(function (check) { return check.Category === category; });
+              if (checks.length === 0) return;
+              diagnosticsResults.appendChild(textElement('div', 'diagGroup', category));
+              checks.forEach(function (check) { diagnosticsResults.appendChild(renderDiagnosticCheck(check, index++)); });
+            });
+        }
+
+        async function runDiagnostics() {
+          if (diagnosticsRunning) return;
+          diagnosticsRunning = true;
+          btnRunDiagnostics.disabled = true;
+          btnRunDiagnostics.querySelector('span').textContent = 'Testing\u2026';
+          diagnosticsSummary.hidden = true;
+          clearChildren(diagnosticsResults);
+          diagnosticsResults.appendChild(textElement('div', 'diagRunning',
+            chkDiagnosticsProbe.checked ? 'Running all checks, including a stream play-test\u2026' : 'Running all checks\u2026'));
+          try {
+            const response = await ApiClient.fetch({
+              type: 'POST',
+              url: ApiClient.getUrl('Mediarow/Diagnostics/Run', { probeStream: chkDiagnosticsProbe.checked })
+            });
+            renderDiagnostics(await response.json());
+          } catch (error) {
+            clearChildren(diagnosticsResults);
+            const message = error && error.status === 429
+              ? 'A test is already running. Wait for it to finish, then try again.'
+              : error && error.status === 403
+                ? 'Only administrators can run the configuration test.'
+                : 'The test could not be started. Check the server log for details.';
+            diagnosticsResults.appendChild(textElement('p', 'diagHint', message));
+          } finally {
+            diagnosticsRunning = false;
+            btnRunDiagnostics.disabled = false;
+            btnRunDiagnostics.querySelector('span').textContent = 'Run tests';
+          }
+        }
+
+        async function loadLastDiagnostics() {
+          if (diagnosticsRunning) return;
+          try {
+            const response = await ApiClient.fetch({ type: 'GET', url: ApiClient.getUrl('Mediarow/Diagnostics/Last') });
+            if (response.status === 200) renderDiagnostics(await response.json());
+          } catch (error) {
+            console.log('Mediarow: no previous diagnostics report', error);
+          }
+        }
+
         // Set up event listeners once
         form.addEventListener('submit', saveConfig);
+        btnRunDiagnostics.addEventListener('click', runDiagnostics);
         selCatalogProvider.addEventListener('change', updateCatalogProviderVisibility);
         selStreamProvider.addEventListener('change', updateStreamProviderVisibility);
         selLanguageMode.addEventListener('change', updateLanguageVisibility);
         chkEnableAnimeAudioVersions.addEventListener('change', updateAnimeAudioTracksVisibility);
         chkEnableSubtitles.addEventListener('change', updateSubtitleSettingsVisibility);
         chkEnablePersistence.addEventListener('change', updatePersistenceSettingsVisibility);
+        chkTriggerLibraryScan.addEventListener('change', updateSetupNotes);
+        chkCleanupUnsavedItems.addEventListener('change', function () { txtUnsavedItemGraceMinutes.disabled = !chkCleanupUnsavedItems.checked; });
         txtMoviesLibraryPath.addEventListener('input', updateLibraryPaths);
         txtSeriesLibraryPath.addEventListener('input', updateLibraryPaths);
         txtAnimeLibraryPath.addEventListener('input', updateLibraryPaths);
         btnAddHomeGenre.addEventListener('click', addHomeGenre);
+        btnAddCatalogRow.addEventListener('click', addCatalogRow);
+        selCatalogRowCatalog.addEventListener('change', refreshCatalogEditor);
+        selCatalogRowType.addEventListener('change', refreshCatalogEditor);
+        btnRunEpisodeSync.addEventListener('click', async function () {
+          const apiClient = window.ApiClient;
+          btnRunEpisodeSync.disabled = true;
+          episodeSyncMessage.textContent = 'Checking every saved show\u2026';
+          try {
+            const response = await apiClient.fetch({
+              type: 'POST',
+              url: apiClient.getUrl('Mediarow/EpisodeSync/Run', { force: true })
+            });
+            const summary = await response.json();
+            episodeSyncMessage.textContent = 'Checked ' + summary.Checked + ' of ' + summary.TrackedSeries + ' shows: ' +
+              summary.NewEpisodes + ' new episode(s)' + (summary.Failures ? ', ' + summary.Failures + ' failed.' : '.');
+          } catch (error) {
+            episodeSyncMessage.textContent = 'The check could not run. See the server log for details.';
+          } finally {
+            btnRunEpisodeSync.disabled = false;
+          }
+        });
         txtNewHomeGenre.addEventListener('keydown', function (event) {
           if (event.key === 'Enter') {
             event.preventDefault();
@@ -2027,10 +2638,15 @@
         });
 
         // Load config when page is shown (works with Jellyfin's SPA navigation)
-        page.addEventListener('viewshow', loadConfig);
-        page.addEventListener('pageshow', loadConfig);
+        function onPageShown() {
+          loadLastDiagnostics();
+          return loadConfig();
+        }
+
+        page.addEventListener('viewshow', onPageShown);
+        page.addEventListener('pageshow', onPageShown);
       })();
     </script>
-  </div>
-</body>
+    </div>
+  </body>
 </html>

@@ -1,4 +1,5 @@
 using Jellyfin.Data.Enums;
+using Jellyfin.Data;
 using Jellyfin.Plugin.Mediarow.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
@@ -6,6 +7,9 @@ using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Microsoft.AspNetCore.Authorization;
+using Jellyfin.Plugin.Mediarow.Services;
+using Jellyfin.Database.Implementations.Enums;
 
 namespace Jellyfin.Plugin.Mediarow.Api;
 
@@ -15,21 +19,28 @@ namespace Jellyfin.Plugin.Mediarow.Api;
 /// based on current plugin configuration.
 /// </summary>
 [ApiController]
+[Authorize]
 [Route("Mediarow/Stream")]
 public class StreamController : ControllerBase
 {
     private readonly ILibraryManager _libraryManager;
     private readonly ILogger<StreamController> _logger;
+    private readonly UserPermissionGuard _guard;
+    private readonly IUserManager _users;
 
     public StreamController(
         ILibraryManager libraryManager,
-        ILogger<StreamController> logger)
+        ILogger<StreamController> logger,
+        UserPermissionGuard guard,
+        IUserManager users)
     {
         _libraryManager = libraryManager;
         _logger = logger;
+        _guard = guard;
+        _users = users;
     }
 
-    private PluginConfiguration Config => MediarowPlugin.Instance?.Configuration ?? new PluginConfiguration();
+    protected virtual PluginConfiguration Config => MediarowPlugin.Instance?.Configuration ?? new PluginConfiguration();
 
     /// <summary>
     /// Redirect to movie stream URL.
@@ -48,6 +59,8 @@ public class StreamController : ControllerBase
             return NotFound($"Movie not found: {imdbId}");
         }
 
+        if (CheckAccess(movie) is { } denied) return denied;
+
         // Build stream URL from template
         var streamUrl = BuildMovieStreamUrl(movie);
         if (string.IsNullOrEmpty(streamUrl))
@@ -56,7 +69,7 @@ public class StreamController : ControllerBase
             return BadRequest("No movie stream URL template configured");
         }
 
-        _logger.LogInformation("[Mediarow] Redirecting movie {Title} to: {Url}", movie.Name, streamUrl);
+        _logger.LogDebug("[Mediarow] Redirecting movie {ItemId}", movie.Id);
         return Redirect(streamUrl);
     }
 
@@ -83,6 +96,8 @@ public class StreamController : ControllerBase
             return NotFound($"Series not found: {imdbId}");
         }
 
+        if (CheckAccess(series) is { } deniedSeries) return deniedSeries;
+
         // Find the episode
         var episodeItem = FindEpisode(series, season, episode);
         if (episodeItem == null)
@@ -92,7 +107,7 @@ public class StreamController : ControllerBase
             return NotFound($"Episode not found: S{season}E{episode}");
         }
 
-        // Build stream URL from template
+        if (CheckAccess(episodeItem) is { } deniedEpisode) return deniedEpisode;
         var streamUrl = BuildTvStreamUrl(episodeItem, series, season, episode);
         if (string.IsNullOrEmpty(streamUrl))
         {
@@ -100,8 +115,7 @@ public class StreamController : ControllerBase
             return BadRequest("No TV stream URL template configured");
         }
 
-        _logger.LogInformation("[Mediarow] Redirecting TV {Series} S{Season}E{Episode} to: {Url}",
-            series.Name, season, episode, streamUrl);
+        _logger.LogDebug("[Mediarow] Redirecting episode {ItemId}", episodeItem.Id);
         return Redirect(streamUrl);
     }
 
@@ -128,6 +142,8 @@ public class StreamController : ControllerBase
             return NotFound($"Anime not found: {anilistId}");
         }
 
+        if (CheckAccess(series) is { } deniedSeries) return deniedSeries;
+
         // Find the episode (anime typically uses Season 1)
         var episodeItem = FindEpisode(series, 1, episode);
         if (episodeItem == null)
@@ -137,7 +153,7 @@ public class StreamController : ControllerBase
             return NotFound($"Episode not found: E{episode}");
         }
 
-        // Build stream URL from template
+        if (CheckAccess(episodeItem) is { } deniedEpisode) return deniedEpisode;
         var streamUrl = BuildAnimeStreamUrl(episodeItem, series, episode, audio);
         if (string.IsNullOrEmpty(streamUrl))
         {
@@ -145,9 +161,21 @@ public class StreamController : ControllerBase
             return BadRequest("No anime stream URL template configured");
         }
 
-        _logger.LogInformation("[Mediarow] Redirecting anime {Series} E{Episode} ({Audio}) to: {Url}",
-            series.Name, episode, audio, streamUrl);
+        _logger.LogDebug("[Mediarow] Redirecting anime episode {ItemId}", episodeItem.Id);
         return Redirect(streamUrl);
+    }
+
+    private IActionResult? CheckAccess(BaseItem item)
+    {
+        Guid requested = Guid.Empty;
+        if (Request.Query.TryGetValue("userId", out var supplied) &&
+            (supplied.Count != 1 || !Guid.TryParse(supplied[0], out requested))) return Forbid();
+        var resolved = _guard.Resolve(User, requested);
+        if (!resolved.Succeeded)
+            return resolved.Failure == UserAccessFailure.Unauthenticated ? Unauthorized() : Forbid();
+        var user = _users.GetUserById(resolved.Context!.UserId);
+        return user != null && !user.HasPermission(PermissionKind.IsDisabled) &&
+            user.IsParentalScheduleAllowed() && item.IsVisibleStandalone(user) ? null : Forbid();
     }
 
     /// <summary>

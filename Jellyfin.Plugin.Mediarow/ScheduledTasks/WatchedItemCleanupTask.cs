@@ -27,7 +27,7 @@ public class WatchedItemCleanupTask(
     public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
         var config = Config;
-        if (!config.Enabled || (!config.CleanupWatchedMovies && !config.CleanupCompletedSeries))
+        if (!config.Enabled || config.CleanupUnsavedItems || (!config.CleanupWatchedMovies && !config.CleanupCompletedSeries))
         {
             progress.Report(100);
             return;
@@ -114,6 +114,7 @@ public class WatchedItemCleanupTask(
                     continue;
                 }
 
+                if (Config.CleanupUnsavedItems) continue;
                 WatchedItemCleanup.DeleteOwnedFilesInLibrary(root, titlePath, isSeries, streams);
                 libraryManager.DeleteItem(item, new DeleteOptions
                 {

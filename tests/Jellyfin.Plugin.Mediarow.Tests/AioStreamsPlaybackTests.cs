@@ -75,7 +75,8 @@ public sealed class AioStreamsPlaybackTests
         var failure = await Assert.ThrowsAsync<HttpRequestException>(() => client.GetMovieStreamsAsync("tt1234"));
         Assert.DoesNotContain("private-secret", failure.ToString());
         await Assert.ThrowsAsync<HttpRequestException>(() => client.GetMovieStreamsAsync("tt1234"));
-        Assert.Equal(2, handler.Calls);
+        // Transient statuses get exactly one retry per lookup; malformed bodies are final.
+        Assert.Equal(status == 503 ? 4 : 2, handler.Calls);
     }
 
     [Fact]
@@ -196,10 +197,15 @@ public sealed class AioStreamsPlaybackTests
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => provider.OpenMediaSource(sources[1].OpenToken, [], cancelled.Token));
             cache.Remove($"aiostreams-probe:{sources[1].Id}");
             probeHasVideo = false;
-            await Assert.ThrowsAsync<InvalidOperationException>(() => provider.OpenMediaSource(sources[1].OpenToken, [], default));
-            Assert.Equal(2, probeCalls);
+            // A source that is not video falls back to the other candidate before giving up.
+            var failure = await Assert.ThrowsAsync<StreamResolutionException>(() => provider.OpenMediaSource(sources[1].OpenToken, [], default));
+            Assert.Equal(3, probeCalls);
+            Assert.Equal(2, failure.Attempts.Count);
             Assert.Equal(1, metadataUpdates);
-            await Assert.ThrowsAsync<InvalidOperationException>(() => provider.OpenMediaSource($"{movie.Id:N}_{Guid.NewGuid():N}", [], default));
+            // A stream id the addon no longer lists plays the best available stream instead of failing.
+            probeHasVideo = true;
+            using var replacement = await provider.OpenMediaSource($"{movie.Id:N}_{Guid.NewGuid():N}", [], default);
+            Assert.Equal(sources[0].Id, replacement.MediaSource.Id);
             await File.WriteAllTextAsync(path, "https://ordinary.test/video.mp4");
             Assert.Empty(await provider.GetMediaSources(movie, default));
         }
@@ -429,6 +435,7 @@ public sealed class AioStreamsPlaybackTests
         : AIOStreamsClient(factory, cache, NullLogger<AIOStreamsClient>.Instance)
     {
         protected override PluginConfiguration Config => config;
+        protected override TimeSpan GetRetryDelay(TimeSpan? retryAfter) => TimeSpan.Zero;
     }
 
     private sealed class TestProvider(IAIOStreamsClient client, ILibraryManager library, IMediaEncoder encoder, IMemoryCache cache)

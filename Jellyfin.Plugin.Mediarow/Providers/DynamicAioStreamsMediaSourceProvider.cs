@@ -35,13 +35,15 @@ public class DynamicAioStreamsMediaSourceProvider : IMediaSourceProvider
     private readonly DynamicItemCache _itemCache;
     private readonly AioStreamsHttpRelay _relay;
     private readonly IHttpContextAccessor? _httpContextAccessor;
+    private readonly StreamResolverService _resolver;
 
     public DynamicAioStreamsMediaSourceProvider(
         IAIOStreamsClient client, ILibraryManager libraryManager, IMediaEncoder encoder,
         IMemoryCache cache, ILogger<DynamicAioStreamsMediaSourceProvider> logger, DynamicItemCache itemCache,
-        AioStreamsHttpRelay relay, IHttpContextAccessor? httpContextAccessor = null)
+        AioStreamsHttpRelay relay, IHttpContextAccessor? httpContextAccessor = null, StreamResolverService? resolver = null)
     {
         _httpContextAccessor = httpContextAccessor;
+        _resolver = resolver ?? new StreamResolverService(client, null, Microsoft.Extensions.Logging.Abstractions.NullLogger<StreamResolverService>.Instance);
         _client = client;
         _libraryManager = libraryManager;
         _encoder = encoder;
@@ -88,18 +90,51 @@ public class DynamicAioStreamsMediaSourceProvider : IMediaSourceProvider
         }
     }
 
-    public async Task<IEnumerable<MediaSourceInfo>> GetMediaSources(BaseItem item, CancellationToken cancellationToken)
+    public Task<IEnumerable<MediaSourceInfo>> GetMediaSources(BaseItem item, CancellationToken cancellationToken)
+        => GetMediaSourcesAsync(item, false, cancellationToken);
+
+    /// <summary>
+    /// Lists the AIOStreams sources of a title. <paramref name="forceRefresh"/> bypasses the cached addon response
+    /// (Refresh Sources); source ids stay stable because they identify the file rather than its signed URL.
+    /// </summary>
+    public async Task<IEnumerable<MediaSourceInfo>> GetMediaSourcesAsync(BaseItem item, bool forceRefresh, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (Config.StreamProvider != StreamProvider.AIOStreams || !_client.IsConfigured ||
-            item is not (Movie or Episode) || !IsMediarowItem(item))
+        if (GetStreamTitle(item) is not { } title)
         {
             return [];
         }
 
+        var resolution = await _resolver.ResolveAsync(item.Id, title, PreferredSourceLanguages(item), forceRefresh, cancellationToken).ConfigureAwait(false);
+        var sources = resolution.Candidates.Select(candidate => CreateSource(item, title, candidate)).ToList();
+        _logger.LogInformation("[Mediarow] Found {Count} playable AIOStreams candidates for item {Id}{Refreshed}",
+            sources.Count, item.Id, resolution.Refreshed ? " (refreshed)" : string.Empty);
+        return sources;
+    }
+
+    /// <summary>Finds one source, refreshing the addon response once when the id is no longer listed.</summary>
+    public async Task<MediaSourceInfo?> FindSourceAsync(BaseItem item, string sourceId, CancellationToken cancellationToken)
+    {
+        if (GetStreamTitle(item) is not { } title)
+        {
+            return null;
+        }
+
+        var (_, candidate) = await _resolver.FindAsync(item.Id, title, PreferredSourceLanguages(item), sourceId, cancellationToken).ConfigureAwait(false);
+        return candidate == null ? null : CreateSource(item, title, candidate);
+    }
+
+    private StreamTitle? GetStreamTitle(BaseItem item)
+    {
+        if (Config.StreamProvider != StreamProvider.AIOStreams || !_client.IsConfigured ||
+            item is not (Movie or Episode) || !IsMediarowItem(item))
+        {
+            return null;
+        }
+
         if (!Config.ShowUnreleasedStreams && item.PremiereDate > DateTime.UtcNow)
         {
-            return [];
+            return null;
         }
 
         var imdbId = item is Episode episode
@@ -111,82 +146,47 @@ public class DynamicAioStreamsMediaSourceProvider : IMediaSourceProvider
             throw new InvalidOperationException("The title requires a movie or series IMDb ID for AIOStreams playback.");
         }
 
-        AIOStreamsResponse? response;
         if (item is Episode selectedEpisode)
         {
             var numbering = GetEpisodeNumbers(selectedEpisode, File.ReadAllText(item.Path));
-            response = await _client.GetEpisodeStreamsAsync(imdbId, numbering.Season, numbering.Episode, cancellationToken).ConfigureAwait(false);
+            return new StreamTitle(imdbId, numbering.Season, numbering.Episode);
         }
-        else
+
+        return new StreamTitle(imdbId);
+    }
+
+    private IReadOnlyList<string> PreferredSourceLanguages(BaseItem item) =>
+        CurrentLanguagePreference(item)?.SourceLanguages(item.GetInheritedOriginalLanguage()) ?? [];
+
+    private MediaSourceInfo CreateSource(BaseItem item, StreamTitle title, StreamCandidate candidate)
+    {
+        _itemCache.StoreAIOStreamsMapping(candidate.SourceId, item.Id, candidate.Url, candidate.Filename);
+        // Relayed sources can be re-resolved mid-playback when their signed link expires.
+        var relayed = candidate.Headers.Count > 0 || Config.EnableStreamRecovery;
+        return new MediaSourceInfo
         {
-            response = await _client.GetMovieStreamsAsync(imdbId, cancellationToken).ConfigureAwait(false);
-        }
-
-        if (response?.Streams == null)
-        {
-            throw new InvalidOperationException("AIOStreams returned no stream response.");
-        }
-
-        var sources = new List<MediaSourceInfo>();
-        var seenUrls = new HashSet<string>(StringComparer.Ordinal);
-        var preference = CurrentLanguagePreference(item);
-        var streams = StreamLanguageDetector.OrderByLanguages(
-            response.Streams,
-            stream => stream == null ? null : $"{stream.Name}\n{stream.Description ?? stream.Title}\n{stream.BehaviorHints?.Filename}",
-            preference?.SourceLanguages(item.GetInheritedOriginalLanguage()) ?? []);
-        foreach (var stream in streams)
-        {
-            if (stream == null || !Uri.TryCreate(stream.Url, UriKind.Absolute, out var uri) ||
-                uri.Scheme is not ("http" or "https") || !string.IsNullOrEmpty(uri.UserInfo))
-            {
-                _logger.LogDebug("[Mediarow] Skipping a non-HTTP stream for item {Id}", item.Id);
-                continue;
-            }
-
-            var headers = stream.BehaviorHints?.ProxyHeaders?.Request ?? new Dictionary<string, string>();
-            if (headers.Any(header => string.IsNullOrWhiteSpace(header.Key) ||
-                header.Key.Any(character => !char.IsAsciiLetterOrDigit(character) && !"!#$%&'*+-.^_`|~".Contains(character)) ||
-                header.Value == null || header.Value.Any(character => character is '\r' or '\n')))
-            {
-                _logger.LogWarning("[Mediarow] Skipping stream with invalid request headers for item {Id}", item.Id);
-                continue;
-            }
-
-            var identity = stream.Url + "\n" + string.Join("\n", headers.OrderBy(pair => pair.Key).Select(pair => $"{pair.Key}:{pair.Value}"));
-            if (!seenUrls.Add(identity))
-            {
-                continue;
-            }
-
-            var sourceId = new Guid(MD5.HashData(Encoding.UTF8.GetBytes($"{item.Id:N}:{identity}"))).ToString("N");
-            _itemCache.StoreAIOStreamsMapping(sourceId, item.Id, stream.Url!, stream.BehaviorHints?.Filename);
-            var container = StreamContainerHelper.DetectContainer(stream.Url, stream.BehaviorHints?.Filename);
-            sources.Add(new MediaSourceInfo
-            {
-                Id = sourceId,
-                Name = stream.DisplayName,
-                Size = stream.BehaviorHints?.VideoSize is > 0 ? stream.BehaviorHints.VideoSize : null,
-                Path = headers.Count == 0 ? stream.Url : _relay.Register(stream.Url!, headers, container == "hls"),
-                Protocol = MediaProtocol.Http,
-                Type = MediaSourceType.Default,
-                Container = container,
-                RequiredHttpHeaders = [],
-                IsRemote = true,
-                VideoType = VideoType.VideoFile,
-                SupportsDirectPlay = false,
-                SupportsDirectStream = true,
-                SupportsTranscoding = true,
-                SupportsProbing = true,
-                RequiresOpening = true,
-                OpenToken = $"{item.Id:N}_{sourceId}",
-                RequiresClosing = true,
-                RunTimeTicks = item.RunTimeTicks,
-                MediaStreams = []
-            });
-        }
-
-        _logger.LogInformation("[Mediarow] Found {Count} playable AIOStreams candidates for item {Id}", sources.Count, item.Id);
-        return sources;
+            Id = candidate.SourceId,
+            Name = candidate.DisplayName,
+            Size = candidate.Size,
+            Path = relayed
+                ? _relay.Register(candidate.Url, candidate.Headers, candidate.Container == "hls", new StreamRecoveryKey(item.Id, title, candidate.StableKey))
+                : candidate.Url,
+            Protocol = MediaProtocol.Http,
+            Type = MediaSourceType.Default,
+            Container = candidate.Container,
+            RequiredHttpHeaders = [],
+            IsRemote = true,
+            VideoType = VideoType.VideoFile,
+            SupportsDirectPlay = false,
+            SupportsDirectStream = true,
+            SupportsTranscoding = true,
+            SupportsProbing = true,
+            RequiresOpening = true,
+            OpenToken = $"{item.Id:N}_{candidate.SourceId}",
+            RequiresClosing = true,
+            RunTimeTicks = item.RunTimeTicks,
+            MediaStreams = []
+        };
     }
 
     public static (int Season, int Episode) GetEpisodeNumbers(Episode episode, string marker)
@@ -230,10 +230,24 @@ public class DynamicAioStreamsMediaSourceProvider : IMediaSourceProvider
         }
 
         var item = _libraryManager.GetItemById(itemId) ?? throw new InvalidOperationException("The playback item is no longer available.");
-        var sources = await GetMediaSources(item, cancellationToken).ConfigureAwait(false);
-        var source = sources.FirstOrDefault(candidate => candidate.Id == parts[1])
-            ?? throw new InvalidOperationException("The selected stream expired or is unavailable. Reload the title to refresh streams.");
-        var info = await ProbeAsync(source, cancellationToken).ConfigureAwait(false);
+        var title = GetStreamTitle(item) ?? throw new InvalidOperationException("AIOStreams playback is not available for this title.");
+        // Probe the selected file; expired links are refreshed and broken ones fall back to the next candidate.
+        var opened = await _resolver.OpenAsync(
+            item.Id,
+            title,
+            PreferredSourceLanguages(item),
+            parts[1],
+            async (candidate, token) =>
+            {
+                var candidateSource = CreateSource(item, title, candidate);
+                return (Source: candidateSource, Info: await ProbeAsync(candidateSource, token).ConfigureAwait(false));
+            },
+            cancellationToken).ConfigureAwait(false);
+        var (source, info) = opened.Value;
+        if (opened.UsedFallback(parts[1]))
+        {
+            _logger.LogWarning("[Mediarow] Requested source {Requested} could not be opened; playing fallback {SourceId}", parts[1], source.Id);
+        }
 
         source.MediaStreams = info.MediaStreams;
         source.AnalyzeDurationMs = 3000;

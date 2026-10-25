@@ -13,15 +13,18 @@ public class SearchActionFilter : IAsyncActionFilter, IOrderedFilter
     private static readonly TimeSpan CatalogWaitLimit = TimeSpan.FromSeconds(8);
     private readonly MediarowService _mediarowService;
     private readonly VirtualResumeTracker _virtualResumeTracker;
+    private readonly UserPermissionGuard _guard;
     private readonly ILogger<SearchActionFilter> _logger;
 
     public SearchActionFilter(
         MediarowService mediarowService,
         VirtualResumeTracker virtualResumeTracker,
+        UserPermissionGuard guard,
         ILogger<SearchActionFilter> logger)
     {
         _mediarowService = mediarowService;
         _virtualResumeTracker = virtualResumeTracker;
+        _guard = guard;
         _logger = logger;
     }
 
@@ -111,18 +114,21 @@ public class SearchActionFilter : IAsyncActionFilter, IOrderedFilter
         var filteredDynamicResults = new List<BaseItemDto>();
         try
         {
-            filteredDynamicResults = CatalogDuplicateFilter.ExcludeKnown(dynamicResults, originalResults.Items);
-            var userId = context.TryGetUserId(out var requestUserId) ? requestUserId : Guid.Empty;
-            if (userId != Guid.Empty)
+            var unseen = CatalogDuplicateFilter.ExcludeKnown(dynamicResults, originalResults.Items);
+            UserAccessResult access = _guard.Resolve(context.HttpContext.User);
+            if (access.Succeeded)
             {
-                foreach (var result in filteredDynamicResults)
-                {
-                    var savedUserData = _virtualResumeTracker.GetUserData(userId, result.Id);
-                    if (savedUserData != null)
-                    {
-                        result.UserData = savedUserData;
-                    }
-                }
+                // Catalog results may be shared cache instances: filter by the caller's rules, then project
+                // per-user copies so resume data never lands on (or leaks from) the shared objects.
+                UserSessionContext session = access.Context!;
+                IReadOnlyDictionary<Guid, long> resumeTicks = _virtualResumeTracker.GetResumeTicksForUser(session.UserId);
+                filteredDynamicResults = _guard.FilterVisible(session, unseen)
+                    .Select(result => VirtualItemProjection.ForUser(
+                        result,
+                        resumeTicks.TryGetValue(result.Id, out long ticks)
+                            ? new UserItemDataDto { Key = result.Id.ToString("N"), PlaybackPositionTicks = ticks }
+                            : null))
+                    .ToList();
             }
         }
         catch (Exception ex)

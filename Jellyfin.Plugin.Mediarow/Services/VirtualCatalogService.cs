@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.Mediarow.Configuration;
+using Jellyfin.Plugin.Mediarow.Models;
 using Jellyfin.Plugin.Mediarow.Providers;
 using MediaBrowser.Model.Dto;
 using Microsoft.Extensions.Caching.Memory;
@@ -17,6 +18,7 @@ public sealed class VirtualCatalogService
     private readonly MediarowService _mediarowService;
     private readonly StremioCatalogProvider _stremioCatalogProvider;
     private readonly SearchResultFactory _searchResultFactory;
+    private readonly CatalogDiscoveryService _discoveryService;
     private readonly IMemoryCache _cache;
     private readonly ILogger<VirtualCatalogService> _logger;
 
@@ -24,12 +26,14 @@ public sealed class VirtualCatalogService
         MediarowService mediarowService,
         StremioCatalogProvider stremioCatalogProvider,
         SearchResultFactory searchResultFactory,
+        CatalogDiscoveryService discoveryService,
         IMemoryCache cache,
         ILogger<VirtualCatalogService> logger)
     {
         _mediarowService = mediarowService;
         _stremioCatalogProvider = stremioCatalogProvider;
         _searchResultFactory = searchResultFactory;
+        _discoveryService = discoveryService;
         _cache = cache;
         _logger = logger;
     }
@@ -37,6 +41,40 @@ public sealed class VirtualCatalogService
     private PluginConfiguration Config =>
         MediarowPlugin.Instance?.Configuration ?? new PluginConfiguration();
 
+    /// <summary>
+    /// First page of an admin-selected catalog row, in the catalog's own order (no shuffle).
+    /// </summary>
+    public async Task<IReadOnlyList<BaseItemDto>> GetCatalogRowAsync(
+        HomeCatalogSelection selection,
+        int limit,
+        CancellationToken cancellationToken = default,
+        string? contentCategory = null)
+    {
+        var requests = _discoveryService.BuildRequests(selection, contentCategory);
+        if (requests.Count == 0)
+        {
+            return Array.Empty<BaseItemDto>();
+        }
+
+        var cacheKey = $"mediarow-home-catalog:{string.Join(';', requests.Select(request => request.CacheKey))}:{contentCategory}:{limit}";
+        if (_cache.TryGetValue<IReadOnlyList<BaseItemDto>>(cacheKey, out var cached) && cached != null)
+        {
+            return cached;
+        }
+
+        try
+        {
+            var (items, _) = await _discoveryService.GetPageAsync(requests, 0, Math.Clamp(limit, 1, 100), contentCategory, cancellationToken);
+            _cache.Set(cacheKey, items, TimeSpan.FromMinutes(Math.Clamp(Config.HomeRowShuffleRefreshMinutes, 1, 1440)));
+            _logger.LogInformation("[Mediarow] Built catalog row {Title} with {Count} items", selection.Title, items.Count);
+            return items;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "[Mediarow] Failed to build catalog row {Title}", selection.Title);
+            return Array.Empty<BaseItemDto>();
+        }
+    }
 
     public Task<IReadOnlyList<BaseItemDto>> GetVirtualItemsByGenreAsync(
         string genre,
@@ -93,13 +131,22 @@ public sealed class VirtualCatalogService
                     _searchResultFactory.CreateDtoFromCatalogItemAsync(catalogItem, cancellationToken)))).ToList();
             }
 
+            var filteredUpstream = false;
             if (items.Count == 0)
             {
+                // Structured discovery (genre id + popularity sort) instead of searching for the word "popular".
+                items = (await _discoveryService.DiscoverRowAsync(genre, contentCategory, limit * 2, cancellationToken)).ToList();
+                filteredUpstream = items.Count > 0;
+            }
+
+            if (items.Count == 0)
+            {
+                // Last resort when no catalog or TMDB key is configured.
                 var query = genre ?? "popular";
                 items = await _mediarowService.SearchAsync(query, contentTypes, cancellationToken);
             }
 
-            if (genre != null)
+            if (genre != null && !filteredUpstream)
             {
                 items = items
                     .Where(item => HasGenre(item, genre))

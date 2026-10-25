@@ -21,10 +21,14 @@ public sealed class AppLibraryFilter : IAsyncActionFilter, IOrderedFilter
     public const string WebClientCookie = "mediarow-web";
 
     private readonly AppLibraryService _libraries;
+    private readonly UserPermissionGuard _guard;
+    private readonly UserPreferenceFilter _preferences;
 
-    public AppLibraryFilter(AppLibraryService libraries)
+    public AppLibraryFilter(AppLibraryService libraries, UserPermissionGuard guard, UserPreferenceFilter preferences)
     {
         _libraries = libraries;
+        _guard = guard;
+        _preferences = preferences;
     }
 
     // Must run before ItemLookupFilter, SeasonEpisodeFilter and ImageFilter.
@@ -42,15 +46,33 @@ public sealed class AppLibraryFilter : IAsyncActionFilter, IOrderedFilter
         string action = descriptor.ActionName;
         CancellationToken cancellationToken = context.HttpContext.RequestAborted;
 
+        bool handled = controller is "UserViews" or "UserLibrary" or "Items" or "Image";
+        if (!handled)
+        {
+            await next();
+            return;
+        }
+
+        // Unresolvable or mismatched user ids fall through to Jellyfin, which enforces its own authorization.
+        Guid requestedUserId = context.ActionArguments.TryGetValue("userId", out object? requested) && requested is Guid id ? id : Guid.Empty;
+        UserAccessResult access = _guard.Resolve(context.HttpContext.User, requestedUserId);
+        if (!access.Succeeded)
+        {
+            await next();
+            return;
+        }
+
+        UserSessionContext session = access.Context!;
+
         if (controller == "UserViews" && action is "GetUserViews" or "GetUserViewsLegacy")
         {
-            await AppendViewsAsync(context, next);
+            await AppendViewsAsync(context, next, session.UserId);
             return;
         }
 
         if (controller is "UserLibrary" or "Items" && action is "GetItem" or "GetItemLegacy")
         {
-            AppLibraryDefinition? library = FindLibrary(context, "itemId");
+            AppLibraryDefinition? library = FindLibrary(context, "itemId", session.UserId);
             if (library != null)
             {
                 context.Result = new OkObjectResult(_libraries.CreateView(library));
@@ -59,30 +81,30 @@ public sealed class AppLibraryFilter : IAsyncActionFilter, IOrderedFilter
         }
         else if (controller == "UserLibrary" && action is "GetLatestMedia" or "GetLatestMediaLegacy")
         {
-            AppLibraryDefinition? library = FindLibrary(context, "parentId");
+            AppLibraryDefinition? library = FindLibrary(context, "parentId", session.UserId);
             if (library != null)
             {
-                IReadOnlyList<BaseItemDto> items = await _libraries.GetItemsAsync(GetUserId(context), library, cancellationToken);
+                IReadOnlyList<BaseItemDto> items = await GetVisibleItemsAsync(session, library, cancellationToken);
                 context.Result = new OkObjectResult(GetLatest(items, context.ActionArguments));
                 return;
             }
         }
         else if (controller == "Items" && action is "GetItems" or "GetItemsByUserIdLegacy")
         {
-            AppLibraryDefinition? library = FindLibrary(context, "parentId");
+            AppLibraryDefinition? library = FindLibrary(context, "parentId", session.UserId);
             if (library != null)
             {
-                IReadOnlyList<BaseItemDto> items = await _libraries.GetItemsAsync(GetUserId(context), library, cancellationToken);
+                IReadOnlyList<BaseItemDto> items = await GetVisibleItemsAsync(session, library, cancellationToken);
                 context.Result = new OkObjectResult(QueryItems(items, context.ActionArguments));
                 return;
             }
         }
         else if (controller == "Image" && action.StartsWith("GetItemImage", StringComparison.Ordinal))
         {
-            AppLibraryDefinition? library = FindLibrary(context, "itemId");
+            AppLibraryDefinition? library = FindLibrary(context, "itemId", session.UserId);
             if (library != null)
             {
-                IReadOnlyList<BaseItemDto> items = await _libraries.GetItemsAsync(GetUserId(context), library, cancellationToken);
+                IReadOnlyList<BaseItemDto> items = await GetVisibleItemsAsync(session, library, cancellationToken);
                 if (items.Count == 0)
                 {
                     context.Result = new NotFoundResult();
@@ -98,7 +120,7 @@ public sealed class AppLibraryFilter : IAsyncActionFilter, IOrderedFilter
         await next();
     }
 
-    private async Task AppendViewsAsync(ActionExecutingContext context, ActionExecutionDelegate next)
+    private async Task AppendViewsAsync(ActionExecutingContext context, ActionExecutionDelegate next, Guid userId)
     {
         bool presetViewsRequested = context.ActionArguments.TryGetValue("presetViews", out object? preset) &&
             preset is Array { Length: > 0 };
@@ -111,7 +133,7 @@ public sealed class AppLibraryFilter : IAsyncActionFilter, IOrderedFilter
             return;
         }
 
-        IReadOnlyList<AppLibraryDefinition> libraries = _libraries.GetLibraries(GetUserId(context));
+        IReadOnlyList<AppLibraryDefinition> libraries = _libraries.GetLibraries(userId);
         if (libraries.Count > 0)
         {
             result.Value = new QueryResult<BaseItemDto>((views.Items ?? Array.Empty<BaseItemDto>())
@@ -120,7 +142,7 @@ public sealed class AppLibraryFilter : IAsyncActionFilter, IOrderedFilter
         }
     }
 
-    private AppLibraryDefinition? FindLibrary(ActionExecutingContext context, string argument)
+    private AppLibraryDefinition? FindLibrary(ActionExecutingContext context, string argument, Guid userId)
     {
         if (!context.ActionArguments.TryGetValue(argument, out object? value))
         {
@@ -128,18 +150,18 @@ public sealed class AppLibraryFilter : IAsyncActionFilter, IOrderedFilter
         }
 
         Guid? id = value as Guid?;
-        return id.HasValue ? _libraries.Find(GetUserId(context), id.Value) : null;
+        return id.HasValue ? _libraries.Find(userId, id.Value) : null;
     }
 
-    private static Guid GetUserId(ActionExecutingContext context)
+    private async Task<IReadOnlyList<BaseItemDto>> GetVisibleItemsAsync(
+        UserSessionContext session,
+        AppLibraryDefinition library,
+        CancellationToken cancellationToken)
     {
-        if (context.ActionArguments.TryGetValue("userId", out object? value) && value is Guid userId && userId != Guid.Empty)
-        {
-            return userId;
-        }
-
-        string? claim = context.HttpContext.User.FindFirstValue("Jellyfin-UserId");
-        return Guid.TryParse(claim, out Guid claimedUserId) ? claimedUserId : Guid.Empty;
+        IReadOnlyList<BaseItemDto> items = await _libraries.GetItemsAsync(session.UserId, library, cancellationToken);
+        return _preferences.FilterItems(session.UserId, _guard.FilterVisible(session, items))
+            .Select(VirtualItemProjection.WithoutUserData)
+            .ToArray();
     }
 
     public static BaseItemDto[] GetLatest(IReadOnlyList<BaseItemDto> items, IDictionary<string, object?> arguments)

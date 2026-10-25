@@ -12,7 +12,7 @@ public sealed class AioStreamsHttpRelay(IMemoryCache cache, IServerApplicationHo
 {
     public string BaseUrl => host.GetApiUrlForLocalAccess(IPAddress.Loopback, allowHttps: false).TrimEnd('/');
 
-    public string Register(string url, IReadOnlyDictionary<string, string> headers, bool isManifest = false)
+    public string Register(string url, IReadOnlyDictionary<string, string> headers, bool isManifest = false, StreamRecoveryKey? recovery = null)
     {
         var identity = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(url + "\n" +
             string.Join("\n", headers.OrderBy(pair => pair.Key).Select(pair => $"{pair.Key}:{pair.Value}")))));
@@ -22,9 +22,10 @@ public sealed class AioStreamsHttpRelay(IMemoryCache cache, IServerApplicationHo
             cache.Set("aio-relay-id:" + identity, ticket, TimeSpan.FromHours(6));
         }
 
-        cache.Set("aio-relay:" + ticket, new RelayTarget(url, new Dictionary<string, string>(headers),
-            isManifest || new Uri(url).AbsolutePath.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase)),
-            new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(6), AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(1) });
+        // Re-registering a URL (e.g. while rewriting a manifest) keeps the recovery key of its existing ticket.
+        recovery ??= Get(ticket)?.Recovery;
+        Store(ticket, new RelayTarget(url, new Dictionary<string, string>(headers),
+            isManifest || new Uri(url).AbsolutePath.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase), recovery));
         var extension = Path.GetExtension(new Uri(url).AbsolutePath);
         if (extension.Length > 12 || extension.Skip(1).Any(character => !char.IsAsciiLetterOrDigit(character)))
         {
@@ -36,6 +37,12 @@ public sealed class AioStreamsHttpRelay(IMemoryCache cache, IServerApplicationHo
     }
 
     public RelayTarget? Get(string ticket) => cache.TryGetValue<RelayTarget>("aio-relay:" + ticket.Split('.', 2)[0], out var target) ? target : null;
+
+    /// <summary>Points an existing ticket at a freshly resolved URL, so players holding the ticket keep working.</summary>
+    public void Replace(string ticket, RelayTarget target) => Store(ticket.Split('.', 2)[0], target);
+
+    private void Store(string ticket, RelayTarget target) => cache.Set("aio-relay:" + ticket, target,
+        new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(6), AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(1) });
 
     public string RewriteManifest(string manifest, Uri origin, IReadOnlyDictionary<string, string> headers)
     {
@@ -58,5 +65,5 @@ public sealed class AioStreamsHttpRelay(IMemoryCache cache, IServerApplicationHo
         }));
     }
 
-    public sealed record RelayTarget(string Url, IReadOnlyDictionary<string, string> Headers, bool IsManifest);
+    public sealed record RelayTarget(string Url, IReadOnlyDictionary<string, string> Headers, bool IsManifest, StreamRecoveryKey? Recovery = null);
 }

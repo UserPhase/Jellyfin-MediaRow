@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.Mediarow.Services;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Querying;
 using Microsoft.Extensions.Caching.Memory;
@@ -12,7 +13,7 @@ public sealed class HomeSectionManager
 {
     private readonly IMemoryCache _cache;
     private readonly ILogger<HomeSectionManager> _logger;
-    private readonly HomeSectionUserSettingsStore? _userSettings;
+    private readonly UserPreferenceStore? _preferences;
     private readonly Dictionary<string, IHomeSection> _sections = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _syncRoot = new();
     private long _configurationVersion;
@@ -20,11 +21,11 @@ public sealed class HomeSectionManager
     public HomeSectionManager(
         IMemoryCache cache,
         ILogger<HomeSectionManager> logger,
-        HomeSectionUserSettingsStore? userSettings = null)
+        UserPreferenceStore? preferences = null)
     {
         _cache = cache;
         _logger = logger;
-        _userSettings = userSettings;
+        _preferences = preferences;
     }
 
     public IReadOnlyList<IHomeSection> GetSections()
@@ -81,8 +82,7 @@ public sealed class HomeSectionManager
             return EmptyResult();
         }
 
-        IReadOnlySet<string>? enabledSections = _userSettings?.Get(request.UserId);
-        if (enabledSections != null && !enabledSections.Contains(section.Id))
+        if (_preferences != null && request.UserId != Guid.Empty && _preferences.Get(request.UserId).IsSectionHidden(section.Id))
         {
             return EmptyResult();
         }

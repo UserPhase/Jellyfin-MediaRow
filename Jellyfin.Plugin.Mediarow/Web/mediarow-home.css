@@ -219,6 +219,138 @@
     }
 }
 
+/* "See all" grid: a full-screen sheet over the Home page. */
+.mediarowSeeAll {
+    font: inherit;
+    font-size: .9em;
+    color: inherit;
+    margin-left: auto;
+    padding: .45em 1.1em;
+    border: 1px solid rgba(127, 127, 127, .5);
+    border-radius: 2em;
+    background: transparent;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.mediarowSeeAll:hover,
+.mediarowSeeAll:focus {
+    background: rgba(0, 164, 220, .3);
+    border-color: #00a4dc;
+    outline: 2px solid #00a4dc;
+}
+
+.mediarowSeeAllOpen,
+.mediarowSeeAllOpen body {
+    overflow: hidden;
+}
+
+.mediarowSeeAllPanel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 1100;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 0 3.3% 3em;
+    background: #101010;
+    color: #fff;
+}
+
+.mediarowSeeAllHeader {
+    position: -webkit-sticky;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.2em 0 .9em;
+    background: #101010;
+}
+
+.mediarowSeeAllTitle {
+    margin: 0;
+    font-size: 1.6em;
+}
+
+.mediarowSeeAllClose {
+    font: inherit;
+    font-size: 1.6em;
+    line-height: 1;
+    color: inherit;
+    width: 1.8em;
+    height: 1.8em;
+    border: 1px solid rgba(255, 255, 255, .35);
+    border-radius: 50%;
+    background: rgba(255, 255, 255, .08);
+    cursor: pointer;
+}
+
+.mediarowSeeAllClose:focus,
+.mediarowSeeAllMore:focus {
+    outline: 2px solid #00a4dc;
+    outline-offset: 3px;
+}
+
+.mediarowSeeAllGrid {
+    display: flex;
+    flex-wrap: wrap;
+    margin-right: -.75em;
+}
+
+.mediarowSeeAllGrid .mediarowSeeAllCard {
+    flex: 0 0 170px;
+    width: 170px;
+    margin: 0 .75em 1.1em 0;
+    cursor: pointer;
+}
+
+.mediarowSeeAllGrid .mediarowHomeCardImage {
+    height: 255px;
+}
+
+.mediarowSeeAllStatus {
+    opacity: .8;
+    text-align: center;
+}
+
+.mediarowSeeAllMore {
+    display: block;
+    font: inherit;
+    color: #fff;
+    margin: .5em auto 0;
+    padding: .75em 2.2em;
+    border: 0;
+    border-radius: 2em;
+    background: #00a4dc;
+    cursor: pointer;
+}
+
+.mediarowSeeAllMore[hidden] {
+    display: none;
+}
+
+.mediarowSeeAllMore[disabled] {
+    opacity: .6;
+}
+
+@media (max-width: 600px) {
+    .mediarowSeeAllGrid .mediarowSeeAllCard {
+        flex-basis: 30%;
+        width: 30%;
+        margin-right: 3%;
+    }
+
+    .mediarowSeeAllGrid .mediarowHomeCardImage {
+        height: auto;
+        padding-top: 0;
+        aspect-ratio: 2 / 3;
+    }
+}
+
 /* Same side inset as Jellyfin's .padded-left so rows line up with the native sections and stay
    clear of TV overscan and phone notches; the scrollers themselves still bleed to the screen edge. */
 .mediarowHomeFilters,
@@ -241,5 +373,415 @@
     .mediarowHomeRowItems {
         padding-left: max(env(safe-area-inset-left), 3.3%);
         padding-right: max(env(safe-area-inset-right), 3.3%);
+    }
+}
+
+/* Personal Home controls ------------------------------------------------------------------ */
+.mediarowCustomizeButton {
+    margin-left: auto;
+    border-style: dashed;
+    letter-spacing: .02em;
+}
+
+.mediarowHomeCard {
+    position: relative;
+}
+
+/* "Not interested": a quiet disc in the poster corner, revealed on hover or focus. */
+.mediarowDismiss {
+    position: absolute;
+    top: .45em;
+    right: .45em;
+    z-index: 2;
+    width: 2em;
+    height: 2em;
+    padding: 0;
+    font: inherit;
+    font-size: 1.05em;
+    line-height: 1;
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, .55);
+    border-radius: 50%;
+    background: rgba(10, 10, 10, .72);
+    cursor: pointer;
+    opacity: 0;
+    transform: scale(.85);
+    transition: opacity .15s ease-out, transform .15s ease-out, background .15s;
+}
+
+.mediarowHomeCard:hover .mediarowDismiss,
+.mediarowHomeCard:focus .mediarowDismiss {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.mediarowDismiss:hover {
+    background: #c62828;
+    border-color: #c62828;
+}
+
+@media (hover: none) {
+    .mediarowDismiss {
+        opacity: .85;
+        transform: scale(1);
+    }
+}
+
+.mediarowToast {
+    position: fixed;
+    left: 50%;
+    bottom: 2.5em;
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    max-width: 90%;
+    padding: .8em .8em .8em 1.3em;
+    color: #fff;
+    background: #1d1d1d;
+    border-left: 3px solid #00a4dc;
+    border-radius: 4px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .55);
+    transform: translateX(-50%);
+    animation: mediarowToastIn .22s ease-out;
+}
+
+.mediarowToastAction {
+    font: inherit;
+    font-weight: 600;
+    color: #00a4dc;
+    margin-left: 1.2em;
+    padding: .35em .8em;
+    border: 0;
+    border-radius: 2em;
+    background: transparent;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    cursor: pointer;
+}
+
+.mediarowToastAction:hover,
+.mediarowToastAction:focus {
+    background: rgba(0, 164, 220, .18);
+    outline: none;
+}
+
+@keyframes mediarowToastIn {
+    from { opacity: 0; transform: translate(-50%, 1em); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* Customize drawer: a right-hand sheet set like a programme listing. */
+.mediarowCustomize {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 1100;
+}
+
+.mediarowCustomizeBackdrop {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    background: rgba(0, 0, 0, .62);
+    animation: mediarowFadeIn .2s ease-out;
+}
+
+.mediarowCustomizeSheet {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    width: 32em;
+    max-width: 100%;
+    color: #f2f2f2;
+    background: #121212;
+    background-image: linear-gradient(180deg, rgba(0, 164, 220, .14) 0, rgba(0, 164, 220, 0) 11em);
+    border-left: 1px solid rgba(255, 255, 255, .08);
+    box-shadow: -24px 0 60px rgba(0, 0, 0, .5);
+    animation: mediarowSheetIn .28s cubic-bezier(.2, .8, .2, 1);
+}
+
+.mediarowCustomizeHeader {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 1.6em 1.6em 1.1em;
+}
+
+.mediarowCustomizeEyebrow {
+    margin: 0 0 .3em;
+    font-size: .74em;
+    font-weight: 600;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    color: #00a4dc;
+}
+
+.mediarowCustomizeTitle {
+    margin: 0;
+    font-size: 1.85em;
+    font-weight: 300;
+    letter-spacing: -.01em;
+}
+
+.mediarowCustomizeBody {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 0 1.6em 1.5em;
+}
+
+.mediarowCustomizeStatus {
+    opacity: .75;
+}
+
+.mediarowCustomizeStatus[hidden] {
+    display: none;
+}
+
+.mediarowCustomizeGroup {
+    padding: 1.2em 0;
+    border-top: 1px solid rgba(255, 255, 255, .09);
+}
+
+.mediarowCustomizeGroup:first-child {
+    border-top: 0;
+    padding-top: .2em;
+}
+
+.mediarowCustomizeGroupTitle {
+    margin: 0 0 .35em;
+    font-size: .8em;
+    font-weight: 600;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    opacity: .7;
+}
+
+.mediarowCustomizeHint {
+    display: block;
+    margin: 0 0 .8em;
+    font-size: .88em;
+    line-height: 1.45;
+    opacity: .62;
+}
+
+.mediarowCustomizeToggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: .95em 1.1em;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, .05);
+    cursor: pointer;
+}
+
+.mediarowCustomizeToggleText strong {
+    display: block;
+    margin-bottom: .2em;
+    font-size: 1.02em;
+}
+
+.mediarowCustomizeToggleText .mediarowCustomizeHint {
+    margin: 0;
+}
+
+.mediarowSwitch {
+    -webkit-appearance: none;
+    appearance: none;
+    position: relative;
+    flex: 0 0 auto;
+    width: 2.9em;
+    height: 1.6em;
+    margin: 0 0 0 1em;
+    border-radius: 1em;
+    background: rgba(255, 255, 255, .22);
+    cursor: pointer;
+    transition: background .18s;
+}
+
+.mediarowSwitch:before {
+    content: "";
+    position: absolute;
+    top: .2em;
+    left: .2em;
+    width: 1.2em;
+    height: 1.2em;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .4);
+    transition: transform .18s cubic-bezier(.2, .8, .2, 1);
+}
+
+.mediarowSwitch:checked {
+    background: #00a4dc;
+}
+
+.mediarowSwitch:checked:before {
+    transform: translateX(1.3em);
+}
+
+.mediarowSwitch:focus,
+.mediarowCustomizeMove:focus,
+.mediarowCustomizeGhost:focus,
+.mediarowCustomizePrimary:focus,
+.mediarowDismiss:focus {
+    outline: 2px solid #00a4dc;
+    outline-offset: 2px;
+}
+
+.mediarowCustomizeRows,
+.mediarowCustomizeDismissed {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.mediarowCustomizeRow {
+    display: flex;
+    align-items: center;
+    padding: .55em 0;
+    border-bottom: 1px solid rgba(255, 255, 255, .05);
+    transition: opacity .18s;
+}
+
+.mediarowCustomizeRow.isHidden {
+    opacity: .45;
+}
+
+.mediarowCustomizeRow.isHidden .mediarowCustomizeRowTitle {
+    text-decoration: line-through;
+    text-decoration-color: rgba(255, 255, 255, .4);
+}
+
+.mediarowCustomizeIndex {
+    flex: 0 0 2.3em;
+    font-size: 1.15em;
+    font-weight: 200;
+    font-variant-numeric: tabular-nums;
+    color: #00a4dc;
+    opacity: .85;
+}
+
+.mediarowCustomizeRowText {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.mediarowCustomizeRowTitle {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.mediarowCustomizeKind {
+    display: block;
+    margin-top: .1em;
+    font-size: .72em;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    opacity: .5;
+}
+
+.mediarowCustomizeMove {
+    flex: 0 0 auto;
+    width: 2.1em;
+    height: 2.1em;
+    margin-left: .35em;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    border: 1px solid rgba(255, 255, 255, .18);
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+}
+
+.mediarowCustomizeMove:hover {
+    border-color: #00a4dc;
+    background: rgba(0, 164, 220, .2);
+}
+
+.mediarowCustomizeMove[disabled] {
+    opacity: .2;
+    cursor: default;
+}
+
+.mediarowCustomizeDismissedItem {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: .55em 0;
+    border-bottom: 1px solid rgba(255, 255, 255, .05);
+}
+
+.mediarowCustomizeGhost,
+.mediarowCustomizePrimary {
+    font: inherit;
+    flex: 0 0 auto;
+    margin-left: .8em;
+    padding: .55em 1.3em;
+    border-radius: 2em;
+    cursor: pointer;
+}
+
+.mediarowCustomizeGhost {
+    color: inherit;
+    border: 1px solid rgba(255, 255, 255, .28);
+    background: transparent;
+}
+
+.mediarowCustomizeGhost:hover {
+    border-color: #00a4dc;
+}
+
+.mediarowCustomizePrimary {
+    color: #fff;
+    border: 1px solid #00a4dc;
+    background: #00a4dc;
+    font-weight: 600;
+}
+
+.mediarowCustomizeGhost[disabled],
+.mediarowCustomizePrimary[disabled] {
+    opacity: .5;
+    cursor: default;
+}
+
+.mediarowCustomizeFooter {
+    display: flex;
+    justify-content: flex-end;
+    padding: 1em 1.6em;
+    border-top: 1px solid rgba(255, 255, 255, .09);
+    background: #0d0d0d;
+}
+
+.mediarowCustomizeFooter .mediarowCustomizeGhost {
+    margin-left: 0;
+    margin-right: auto;
+}
+
+@keyframes mediarowSheetIn {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+
+@keyframes mediarowFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mediarowCustomizeSheet,
+    .mediarowCustomizeBackdrop,
+    .mediarowToast {
+        animation: none;
     }
 }

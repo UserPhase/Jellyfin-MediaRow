@@ -1,6 +1,6 @@
 name: "Jellyfin Mediarow"
 guid: "68cff731-4588-4ab3-aa0d-9ca73648679a"
-version: "2.2.0"
+version: "2.4.0"
 targetAbi: "12.0.0.0"
 framework: "net10.0"
 owner: "UserPhase"
@@ -14,6 +14,21 @@ category: "Metadata"
 artifacts:
   - "Jellyfin.Plugin.Mediarow.dll"
 changelog: |-
+  ## 2.4.0
+  - Retain unsaved-title cleanup with a custom grace period and Favorite-based retention
+  - Keep watched movie identities after temporary library entries are removed
+  - Organize all active settings for Jellyfin Web and Jellyfin Media Player
+  - Keep catalog editing, per-user language preferences, library paths and diagnostics together
+  - Add discovery catalogs, personal Home preferences, episode sync and stream recovery
+  - Require authenticated, authorized stream redirects and keep private URLs out of logs
+  - Preserve active relay tickets during cache cleanup and recover indexed subtitle files
+  - Apply parental policy changes on the next request
+  - Fix Jellyfin showing an older version after updating (the DLL now carries the release version)
+  - Per-user audio and subtitle languages, with remembered choices per series
+  - Skip Intro / Skip Credits and a Netflix-style next-episode prompt
+  - Faster opening of movies and episodes that are not in the library yet
+  - Next Up resumes where you stopped instead of showing the pilot
+
   ## 2.2.0
   - Configure exact Movies, Series and Anime paths separately
   - Preserve legacy destinations and use explicit paths for playback and cleanup

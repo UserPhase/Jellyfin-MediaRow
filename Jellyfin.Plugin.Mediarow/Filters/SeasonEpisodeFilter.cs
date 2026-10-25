@@ -25,6 +25,7 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
     private readonly IDtoService _dtoService;
     private readonly PersistenceService _persistenceService;
     private readonly SeriesResumeResolver _seriesResumeResolver;
+    private readonly UserPermissionGuard _guard;
     private readonly ILogger<SeasonEpisodeFilter> _logger;
 
     public SeasonEpisodeFilter(
@@ -34,8 +35,10 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
         IDtoService dtoService,
         PersistenceService persistenceService,
         SeriesResumeResolver seriesResumeResolver,
+        UserPermissionGuard guard,
         ILogger<SeasonEpisodeFilter> logger)
     {
+        _guard = guard;
         _itemCache = itemCache;
         _libraryManager = libraryManager;
         _userManager = userManager;
@@ -48,15 +51,16 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
     private bool TryGetUser(ActionExecutingContext context, out User user)
     {
         user = null!;
-        Guid userId = context.ActionArguments.TryGetValue("userId", out var value) && value is Guid id && id != Guid.Empty
+        Guid requestedUserId = context.ActionArguments.TryGetValue("userId", out var value) && value is Guid id
             ? id
             : Guid.Empty;
-        if (userId == Guid.Empty && !context.TryGetUserId(out userId))
+        UserAccessResult access = _guard.Resolve(context.HttpContext.User, requestedUserId);
+        if (!access.Succeeded)
         {
             return false;
         }
 
-        var found = _userManager.GetUserById(userId);
+        var found = _userManager.GetUserById(access.Context!.UserId);
         if (found is null)
         {
             return false;
@@ -65,6 +69,24 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
         user = found;
         return true;
     }
+
+    /// <summary>
+    /// Virtual seasons/episodes inherit the series' parental decision; blocked or unauthorized requests get an empty list.
+    /// </summary>
+    private bool CanViewSeries(ActionExecutingContext context, BaseItemDto seriesItem)
+    {
+        Guid requestedUserId = context.ActionArguments.TryGetValue("userId", out var value) && value is Guid id
+            ? id
+            : Guid.Empty;
+        UserAccessResult access = _guard.Resolve(context.HttpContext.User, requestedUserId);
+        return access.Succeeded && _guard.CanView(access.Context!, seriesItem);
+    }
+
+    private static OkObjectResult EmptyResult() => new(new QueryResult<BaseItemDto>
+    {
+        Items = Array.Empty<BaseItemDto>(),
+        TotalRecordCount = 0
+    });
 
     // Run before other filters
     public int Order => 0;
@@ -133,6 +155,12 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
             return;
         }
 
+        if (!CanViewSeries(context, seriesItem))
+        {
+            context.Result = EmptyResult();
+            return;
+        }
+
         // Get cached seasons
         var seasons = _itemCache.GetSeasonsForSeries(seriesId);
         if (seasons == null || seasons.Count == 0)
@@ -171,6 +199,12 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
         if (seriesItem == null || !SearchResultFactory.IsDynamicItem(seriesItem))
         {
             await next();
+            return;
+        }
+
+        if (!CanViewSeries(context, seriesItem))
+        {
+            context.Result = EmptyResult();
             return;
         }
 
