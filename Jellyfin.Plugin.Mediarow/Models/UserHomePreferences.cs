@@ -13,7 +13,7 @@ public sealed class UserHomePreferences
     /// <summary>Section ids (catalog, genre or Popular rows) the user has hidden.</summary>
     public List<string> HiddenSections { get; set; } = new();
 
-    /// <summary>Removes titles the user has fully watched from every virtual row.</summary>
+    /// <summary>Hides watched movies and verified completed, ended series from discovery rows only.</summary>
     public bool HideWatched { get; set; }
 
     /// <summary>Titles the user dismissed with "Not interested".</summary>

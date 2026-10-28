@@ -4,6 +4,14 @@ using MediaBrowser.Model.Dto;
 
 namespace Jellyfin.Plugin.Mediarow.Services;
 
+public enum HomeItemContext
+{
+    DiscoveryRow,
+    ContinueWatching,
+    Search,
+    LibraryBrowse
+}
+
 /// <summary>
 /// Applies a user's personal Home preferences to rows and items before they are serialized.
 /// Order: section visibility/order → (permission guard, done by callers) → Not interested → Hide watched.
@@ -55,13 +63,15 @@ public sealed class UserPreferenceFilter
     }
 
     /// <summary>
-    /// Removes the user's "Not interested" titles and, when enabled, titles the user has fully watched.
+    /// Removes dismissed and fully watched recommendations only from discovery rows (including See All).
+    /// Search, library browsing and Continue Watching must not lose titles to recommendation preferences.
     /// Never mutates the input items (they may be shared cache instances).
     /// </summary>
-    public IReadOnlyList<BaseItemDto> FilterItems(Guid userId, IEnumerable<BaseItemDto> items)
+    public IReadOnlyList<BaseItemDto> FilterItems(
+        Guid userId, IEnumerable<BaseItemDto> items, HomeItemContext context = HomeItemContext.DiscoveryRow)
     {
         BaseItemDto[] input = items as BaseItemDto[] ?? items.ToArray();
-        if (userId == Guid.Empty || input.Length == 0)
+        if (context != HomeItemContext.DiscoveryRow || userId == Guid.Empty || input.Length == 0)
         {
             return input;
         }

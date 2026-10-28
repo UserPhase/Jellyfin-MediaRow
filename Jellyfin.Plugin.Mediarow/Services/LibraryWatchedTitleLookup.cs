@@ -4,6 +4,7 @@ using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.Entities;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.Mediarow.Services;
@@ -19,7 +20,8 @@ public interface IWatchedTitleLookup
 /// <summary>
 /// Virtual titles only gain watch state once imported, so this reads the user's played flag from the
 /// matching library item: same id first, otherwise the same IMDb/TMDB/TVDB id.
-/// Movies count as watched when played; series when every episode is played.
+/// Movies count as watched when played. Series need an ended status and a complete, recently
+/// checked episode inventory; a played flag on a partially imported show proves nothing.
 /// </summary>
 public sealed class LibraryWatchedTitleLookup : IWatchedTitleLookup
 {
@@ -30,19 +32,22 @@ public sealed class LibraryWatchedTitleLookup : IWatchedTitleLookup
     private readonly IUserDataManager _userDataManager;
     private readonly ILogger<LibraryWatchedTitleLookup> _logger;
     private readonly IMovieWatchHistory? _movieHistory;
+    private readonly EpisodeSyncService? _episodeSync;
 
     public LibraryWatchedTitleLookup(
         ILibraryManager libraryManager,
         IUserManager userManager,
         IUserDataManager userDataManager,
         ILogger<LibraryWatchedTitleLookup> logger,
-        IMovieWatchHistory? movieHistory = null)
+        IMovieWatchHistory? movieHistory = null,
+        EpisodeSyncService? episodeSync = null)
     {
         _libraryManager = libraryManager;
         _userManager = userManager;
         _userDataManager = userDataManager;
         _logger = logger;
         _movieHistory = movieHistory;
+        _episodeSync = episodeSync;
     }
 
     public IReadOnlySet<Guid> GetWatchedItemIds(Guid userId, IReadOnlyList<BaseItemDto> items)
@@ -73,13 +78,12 @@ public sealed class LibraryWatchedTitleLookup : IWatchedTitleLookup
             }
 
             var userData = _userDataManager.GetUserDataBatch(libraryItems, user);
+            var finishedSeries = GetFinishedSeriesIds(libraryItems.OfType<Series>().ToArray(), user);
             var played = libraryItems
                 .Where(item =>
                 {
                     userData.TryGetValue(item.Id, out var data);
-                    return item is Series
-                        ? data != null && item.IsPlayed(user, data)
-                        : data?.Played == true;
+                    return item is Series ? finishedSeries.Contains(item.Id) : data?.Played == true;
                 })
                 .ToArray();
             var playedIds = played.Select(item => item.Id).ToHashSet();
@@ -97,6 +101,51 @@ public sealed class LibraryWatchedTitleLookup : IWatchedTitleLookup
             _logger.LogWarning(ex, "[Mediarow] Could not read watched state for Hide watched");
             return retainedMovieIds;
         }
+    }
+
+    private HashSet<Guid> GetFinishedSeriesIds(IReadOnlyList<Series> series, User user)
+    {
+        var finished = new HashSet<Guid>();
+        if (series.Count == 0 || _episodeSync == null) return finished;
+
+        DateTime now = DateTime.UtcNow;
+        var inventory = _episodeSync.GetState();
+        // Ended shows are refreshed weekly. Missing, stale or failed metadata keeps the show visible.
+        var candidates = series.Where(show => show.Status == SeriesStatus.Ended &&
+            inventory.TryGetValue(show.Id, out var state) &&
+            string.Equals(state.Status, "Ended", StringComparison.OrdinalIgnoreCase) &&
+            state.LastCheckedUtc >= now.AddDays(-8) && state.LastCheckedUtc <= now &&
+            state.ConsecutiveFailures == 0 && state.LastError == null &&
+            state.NextAirDateUtc == null && state.KnownEpisodeCount > 0).ToArray();
+        if (candidates.Length == 0) return finished;
+
+        // Two batched calls for the entire row, rather than recursive completion queries per poster.
+        // Deliberately include missing/virtual entries: unavailable episodes are not evidence of completion.
+        var episodes = _libraryManager.GetItemList(new InternalItemsQuery
+        {
+            AncestorIds = candidates.Select(show => show.Id).ToArray(),
+            IncludeItemTypes = [BaseItemKind.Episode],
+            Recursive = true,
+            EnableTotalRecordCount = false
+        }).OfType<Episode>().ToArray();
+        var data = _userDataManager.GetUserDataBatch(episodes, user);
+        var episodesBySeries = episodes.ToLookup(episode => episode.SeriesId);
+        foreach (Series show in candidates)
+        {
+            var regular = episodesBySeries[show.Id].Where(episode => episode.ParentIndexNumber != 0).ToArray();
+            if (regular.Length == 0 || regular.Any(episode =>
+                episode.ParentIndexNumber is not > 0 || episode.IndexNumber is not > 0 ||
+                !episode.PremiereDate.HasValue || episode.PremiereDate > now)) continue;
+
+            // Multiple versions of one episode count once; watching one version is enough.
+            var distinct = regular.GroupBy(episode => (episode.ParentIndexNumber, episode.IndexNumber)).ToArray();
+            if (distinct.Length == inventory[show.Id].KnownEpisodeCount && distinct.All(versions =>
+                versions.Any(episode => data.TryGetValue(episode.Id, out var state) && state.Played)))
+            {
+                finished.Add(show.Id);
+            }
+        }
+        return finished;
     }
 
     private List<BaseItem> FindLibraryItems(IReadOnlyList<BaseItemDto> candidates)

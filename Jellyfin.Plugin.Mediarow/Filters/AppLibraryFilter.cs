@@ -84,7 +84,7 @@ public sealed class AppLibraryFilter : IAsyncActionFilter, IOrderedFilter
             AppLibraryDefinition? library = FindLibrary(context, "parentId", session.UserId);
             if (library != null)
             {
-                IReadOnlyList<BaseItemDto> items = await GetVisibleItemsAsync(session, library, cancellationToken);
+                IReadOnlyList<BaseItemDto> items = await GetVisibleItemsAsync(session, library, HomeItemContext.DiscoveryRow, cancellationToken);
                 context.Result = new OkObjectResult(GetLatest(items, context.ActionArguments));
                 return;
             }
@@ -94,7 +94,9 @@ public sealed class AppLibraryFilter : IAsyncActionFilter, IOrderedFilter
             AppLibraryDefinition? library = FindLibrary(context, "parentId", session.UserId);
             if (library != null)
             {
-                IReadOnlyList<BaseItemDto> items = await GetVisibleItemsAsync(session, library, cancellationToken);
+                // Native clients search/browse these same virtual libraries. Recommendation preferences
+                // belong to Latest/Home rows, never to intentional search or library browsing.
+                IReadOnlyList<BaseItemDto> items = await GetVisibleItemsAsync(session, library, GetItemContext(context.ActionArguments), cancellationToken);
                 context.Result = new OkObjectResult(QueryItems(items, context.ActionArguments));
                 return;
             }
@@ -104,7 +106,7 @@ public sealed class AppLibraryFilter : IAsyncActionFilter, IOrderedFilter
             AppLibraryDefinition? library = FindLibrary(context, "itemId", session.UserId);
             if (library != null)
             {
-                IReadOnlyList<BaseItemDto> items = await GetVisibleItemsAsync(session, library, cancellationToken);
+                IReadOnlyList<BaseItemDto> items = await GetVisibleItemsAsync(session, library, HomeItemContext.DiscoveryRow, cancellationToken);
                 if (items.Count == 0)
                 {
                     context.Result = new NotFoundResult();
@@ -156,13 +158,19 @@ public sealed class AppLibraryFilter : IAsyncActionFilter, IOrderedFilter
     private async Task<IReadOnlyList<BaseItemDto>> GetVisibleItemsAsync(
         UserSessionContext session,
         AppLibraryDefinition library,
+        HomeItemContext context,
         CancellationToken cancellationToken)
     {
         IReadOnlyList<BaseItemDto> items = await _libraries.GetItemsAsync(session.UserId, library, cancellationToken);
-        return _preferences.FilterItems(session.UserId, _guard.FilterVisible(session, items))
+        return _preferences.FilterItems(session.UserId, _guard.FilterVisible(session, items), context)
             .Select(VirtualItemProjection.WithoutUserData)
             .ToArray();
     }
+
+    public static HomeItemContext GetItemContext(IDictionary<string, object?> arguments) =>
+        string.IsNullOrWhiteSpace(Get<string>(arguments, "searchTerm"))
+            ? HomeItemContext.LibraryBrowse
+            : HomeItemContext.Search;
 
     public static BaseItemDto[] GetLatest(IReadOnlyList<BaseItemDto> items, IDictionary<string, object?> arguments)
     {

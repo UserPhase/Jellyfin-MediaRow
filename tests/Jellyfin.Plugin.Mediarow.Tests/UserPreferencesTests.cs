@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.Mediarow.HomeScreen;
+using Jellyfin.Plugin.Mediarow.Filters;
 using Jellyfin.Plugin.Mediarow.Models;
 using Jellyfin.Plugin.Mediarow.Services;
 using MediaBrowser.Model.Dto;
@@ -215,6 +216,39 @@ public sealed class UserPreferencesTests : IDisposable
 
         Assert.Empty(hidden.Items!);
         Assert.Single(visible.Items!);
+    }
+
+    [Theory]
+    [InlineData(HomeItemContext.Search)]
+    [InlineData(HomeItemContext.LibraryBrowse)]
+    [InlineData(HomeItemContext.ContinueWatching)]
+    public void RecommendationPreferencesNeverRemoveSearchBrowseOrResumeItems(HomeItemContext context)
+    {
+        var store = NewStore();
+        var watched = new FakeWatched();
+        var filter = new UserPreferenceFilter(store, watched);
+        BaseItemDto finished = Movie("Watched favorite");
+        finished.UserData = new() { Key = "test", IsFavorite = true, Played = true, PlaybackPositionTicks = 50 };
+        BaseItemDto dismissed = Movie("Dismissed but deliberately searched");
+        watched.Played.Add((UserA, finished.Id));
+        store.Update(UserA, new UserPreferencesUpdate { HideWatched = true });
+        store.AddNotInterested(UserA, UserPreferenceFilter.CreateEntry(dismissed.Id, dismissed));
+        BaseItemDto[] items = [finished, dismissed];
+        string before = JsonSerializer.Serialize(items);
+
+        Assert.Equal(items, filter.FilterItems(UserA, items, context));
+        Assert.Equal(0, watched.Calls);
+        Assert.Equal(before, JsonSerializer.Serialize(items));
+        Assert.Empty(filter.FilterItems(UserA, items, HomeItemContext.DiscoveryRow));
+    }
+
+    [Theory]
+    [InlineData(null, HomeItemContext.LibraryBrowse)]
+    [InlineData("  ", HomeItemContext.LibraryBrowse)]
+    [InlineData("Heat", HomeItemContext.Search)]
+    public void NativeLibraryRequestsUseAnExplicitNonRecommendationContext(string? term, HomeItemContext expected)
+    {
+        Assert.Equal(expected, AppLibraryFilter.GetItemContext(new Dictionary<string, object?> { ["searchTerm"] = term }));
     }
 
     [Fact]

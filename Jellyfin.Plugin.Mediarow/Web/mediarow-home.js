@@ -778,7 +778,7 @@
             var watchedRow = el('label', 'mediarowCustomizeToggle');
             var watchedText = el('span', 'mediarowCustomizeToggleText');
             watchedText.appendChild(el('strong', null, 'Hide watched titles'));
-            watchedText.appendChild(el('span', 'mediarowCustomizeHint', 'Movies and shows you have finished disappear from every row.'));
+            watchedText.appendChild(el('span', 'mediarowCustomizeHint', 'Hide watched movies and fully watched, ended shows from recommendations. Unfinished or continuing shows stay visible. Search, library browsing and Continue Watching are unchanged.'));
             watchedRow.appendChild(watchedText);
             watchedRow.appendChild(createSwitch('Hide watched titles', state.hideWatched, function (checked) { state.hideWatched = checked; }));
             watched.appendChild(watchedRow);

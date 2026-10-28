@@ -142,7 +142,9 @@ public sealed class MediarowHomeController : ControllerBase
 
         // Section results are cached; project per request so the cached instances stay untouched.
         IReadOnlyDictionary<Guid, long> resumeTicks = _resumeTracker.GetResumeTicksForUser(session.UserId);
-        BaseItemDto[] items = _preferences.FilterItems(session.UserId, _guard.FilterVisible(session, result.Items ?? Array.Empty<BaseItemDto>()))
+        HomeItemContext itemContext = id.Equals("Mediarow_ContinueWatching", StringComparison.OrdinalIgnoreCase)
+            ? HomeItemContext.ContinueWatching : HomeItemContext.DiscoveryRow;
+        BaseItemDto[] items = _preferences.FilterItems(session.UserId, _guard.FilterVisible(session, result.Items ?? Array.Empty<BaseItemDto>()), itemContext)
             .Select(item => ProjectForUser(item, resumeTicks))
             .ToArray();
         return new QueryResult<BaseItemDto>(items);
@@ -201,7 +203,7 @@ public sealed class MediarowHomeController : ControllerBase
         var (pageItems, hasMore) = await _discovery.GetPageAsync(requests, pageIndex, pageSize, contentCategory, cancellationToken);
         UserSessionContext session = access.Context!;
         IReadOnlyDictionary<Guid, long> resumeTicks = _resumeTracker.GetResumeTicksForUser(session.UserId);
-        BaseItemDto[] items = _preferences.FilterItems(session.UserId, _guard.FilterVisible(session, pageItems))
+        BaseItemDto[] items = _preferences.FilterItems(session.UserId, _guard.FilterVisible(session, pageItems), HomeItemContext.DiscoveryRow)
             .Select(item => ProjectForUser(item, resumeTicks))
             .ToArray();
         return new CatalogPageResult(items, pageIndex, pageSize, hasMore)

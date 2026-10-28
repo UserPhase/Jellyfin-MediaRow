@@ -8,9 +8,11 @@ Release safety fixes require authentication and user/library authorization befor
 
 The optional **Keep only what you save** policy removes idle generated STRM/NFO entries after a configurable grace period. Favorites from any user, active/paused playback, imports, and library scans protect a title. Activity tracking stays in memory. Hide watched keeps stable movie identities in one compact shared history file so cleanup does not make watched movies appear new again. Rows can be shorter or empty when most available candidates are already watched.
 
+Hide watched and Not interested now apply only to recommendations and their See All pages, including native-client Latest rows. Search, full library browsing and Continue Watching retain titles. Continuing and unfinished series stay visible; hiding an ended series requires a recent successful episode inventory and watched state for every regular episode. Unknown or stale completion keeps the show visible. File cleanup remains a separate setting.
+
 ## Verification
 
-- .NET 10 suite: 242 tests passed.
+- .NET 10 suite: 264 tests passed, including recommendation scope, incomplete series and batched episode checks.
 - Node browser-behavior suites: 46 tests passed.
 - Real-browser settings check: 58 scalar controls edited, saved, and reopened; desktop/phone layout, older DOM without `replaceChildren`, section navigation, collapsed-field validation, and failed-load protection passed.
 - Additional configuration tests cover catalog rows and order, language priorities for multiple users, remembered series overrides, and personal Home controls.
