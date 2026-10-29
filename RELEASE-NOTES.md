@@ -1,5 +1,7 @@
 # Mediarow 2.4.0
 
+Started, unfinished series now remain protected from unsaved-title cleanup between episodes. Partial playback, completed earlier episodes and ongoing shows waiting for new episodes all count. Any account's unfinished viewing retains the shared title, using Jellyfin's saved history across restarts. Opening a poster alone still permits grace-period cleanup. Verified fully finished, ended series can expire again; favorites retain them.
+
 The server-hosted settings page now groups connections, Home rows, library management, languages, and diagnostics. It preserves the publish folder's discovery catalogs, personal Home preferences, stream recovery, episode sync, per-user track priorities, and series overrides.
 
 The page uses native form controls, keyboard-accessible navigation and row-order buttons, and focus/spacing styles compatible with Qt 5.15's embedded browser. Saving preserves inactive-provider values and other users' preferences. Failed loads cannot overwrite settings with defaults; browser validation opens collapsed settings before focusing an invalid field.
@@ -12,7 +14,7 @@ Hide watched and Not interested now apply only to recommendations and their See 
 
 ## Verification
 
-- .NET 10 suite: 264 tests passed, including recommendation scope, incomplete series and batched episode checks.
+- .NET 10 suite: 334 tests passed, including 24 between-episode retention checks, recommendation scope, incomplete inventories and batched episode lookups.
 - Node browser-behavior suites: 46 tests passed.
 - Real-browser settings check: 58 scalar controls edited, saved, and reopened; desktop/phone layout, older DOM without `replaceChildren`, section navigation, collapsed-field validation, and failed-load protection passed.
 - Additional configuration tests cover catalog rows and order, language priorities for multiple users, remembered series overrides, and personal Home controls.

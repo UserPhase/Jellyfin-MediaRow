@@ -6,20 +6,22 @@ using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
+using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.Mediarow.ScheduledTasks;
 
-/// <summary>Reclaims generated library entries after browsing or playback, regardless of watched state.</summary>
+/// <summary>Reclaims idle unsaved entries, retaining series that an account has started but not finished.</summary>
 public class UnsavedItemCleanupTask(
     ILibraryManager library, IUserManager users, IUserDataManager userData, ISessionManager sessions,
-    TemporaryItemActivity activity, ILogger<UnsavedItemCleanupTask> logger) : IScheduledTask
+    TemporaryItemActivity activity, ILogger<UnsavedItemCleanupTask> logger,
+    EpisodeSyncService? episodeSync = null, DynamicItemCache? itemCache = null) : IScheduledTask
 {
     protected virtual PluginConfiguration Config => MediarowPlugin.Instance?.Configuration ?? new();
     public string Key => "MediarowUnsavedItemCleanup";
     public string Name => "Mediarow: Remove Unsaved Titles";
-    public string Description => "Removes idle generated STRM/NFO entries after the configured grace period. Keeps favorites and active or paused playback.";
+    public string Description => "Removes idle generated STRM/NFO entries after the configured grace period. Keeps favorites, active or paused playback, and started unfinished series.";
     public string Category => "Mediarow";
 
     public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
@@ -32,8 +34,6 @@ public class UnsavedItemCleanupTask(
             throw new InvalidOperationException("Unsaved cleanup requires an absolute persistent library folder.");
         if (library.IsScanRunning) { progress.Report(100); return; }
 
-        // A favorite retains the shared title even if its owner is disabled or currently lacks access.
-        var allUsers = users.GetUsers().ToArray();
         var candidates = library.GetItemsResult(new InternalItemsQuery
         {
             Recursive = true, IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Series]
@@ -60,9 +60,28 @@ public class UnsavedItemCleanupTask(
                 var files = WatchedItemCleanup.GetOwnedFilesInLibrary(root, titlePath, series, streams);
                 if (files.Count == 0) continue;
 
-                bool IsRetained() => allUsers.Any(user => retainedItems.Any(child => userData.GetUserData(user, child)?.IsFavorite == true)) ||
-                    sessions.Sessions.Any(session => session.NowPlayingItem is { } playing &&
-                        (ids.Contains(playing.Id) || (series && playing.SeriesId == item.Id)));
+                bool IsRetained()
+                {
+                    if (sessions.Sessions.Any(session => session.NowPlayingItem is { } playing &&
+                        (ids.Contains(playing.Id) || (series && playing.SeriesId == item.Id)))) return true;
+
+                    // A favorite or unfinished series retains the shared title even when that account
+                    // is disabled or currently lacks library access. Re-read history inside the gate.
+                    var histories = users.GetUsers()
+                        .Select(user => retainedItems.Select(child => userData.GetUserData(user, child)).ToArray())
+                        .ToArray();
+                    if (histories.Any(history => history.Any(data => data?.IsFavorite == true))) return true;
+                    if (item is not Series show) return false;
+
+                    var started = histories.Where(history => history.Any(HasPlaybackHistory)).ToArray();
+                    if (started.Length == 0) return false; // Opening a poster is not a commitment to watch.
+                    var episodes = children.OfType<Episode>().ToArray();
+                    if (!HasCompleteInventory(show, episodes)) return true;
+                    var episodeIndexes = retainedItems.Select((child, index) => (child, index))
+                        .Where(entry => entry.child is Episode).Select(entry => entry.index).ToArray();
+                    return started.Any(history => episodeIndexes.Any(index =>
+                        history[index]?.Played != true || history[index]!.PlaybackPositionTicks > 0));
+                }
 
                 if (IsRetained()) { activity.Touch(titlePath); continue; }
                 activity.TryCleanup(titlePath, files.Max(File.GetLastWriteTimeUtc),
@@ -92,6 +111,31 @@ public class UnsavedItemCleanupTask(
             await Task.Yield();
         }
         progress.Report(100);
+    }
+
+    private static bool HasPlaybackHistory(UserItemData? data) => data != null &&
+        (data.Played || data.PlaybackPositionTicks > 0 || data.PlayCount > 0 || data.LastPlayedDate > DateTime.MinValue);
+
+    private bool HasCompleteInventory(Series show, IReadOnlyList<Episode> episodes)
+    {
+        if (show.Status != SeriesStatus.Ended || episodes.Count == 0) return false;
+        var now = DateTime.UtcNow;
+        var inventory = episodeSync?.GetState();
+        if (inventory == null || !inventory.TryGetValue(show.Id, out var state) ||
+            !string.Equals(state.Status, "Ended", StringComparison.OrdinalIgnoreCase) ||
+            state.LastCheckedUtc == null || state.LastCheckedUtc < now.AddDays(-8) || state.LastCheckedUtc > now ||
+            state.ConsecutiveFailures != 0 || state.LastError != null || state.NextAirDateUtc != null || state.KnownEpisodeCount <= 0)
+            return false;
+        var expected = itemCache?.GetEpisodesForSeries(show.Id)?.Where(episode => episode.ParentIndexNumber != 0).ToArray();
+        if (expected == null || expected.Length != state.KnownEpisodeCount || expected.Any(episode =>
+            episode.ParentIndexNumber is not > 0 || episode.IndexNumber is not > 0 ||
+            !episode.PremiereDate.HasValue || episode.PremiereDate > now)) return false;
+        if (episodes.Any(episode => !episode.PremiereDate.HasValue || episode.PremiereDate > now)) return false;
+        var regular = episodes.Where(episode => episode.ParentIndexNumber != 0).ToArray();
+        if (regular.Any(episode => episode.ParentIndexNumber is not > 0 || episode.IndexNumber is not > 0)) return false;
+        var expectedKeys = expected.Select(episode => (episode.ParentIndexNumber!.Value, episode.IndexNumber!.Value)).ToHashSet();
+        return expectedKeys.Count == state.KnownEpisodeCount &&
+            expectedKeys.SetEquals(regular.Select(episode => (episode.ParentIndexNumber!.Value, episode.IndexNumber!.Value)));
     }
 
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()

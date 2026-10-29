@@ -150,7 +150,7 @@ public sealed class UnsavedItemCleanupTests
     [InlineData(false, false, true)]
     [InlineData(true, false, false)]
     [InlineData(false, true, false)]
-    public async Task OngoingSeriesExpireUnlessAChildIsSavedOrPlaying(bool favoriteChild, bool playingChild, bool removed)
+    public async Task PosterOnlySeriesExpireUnlessAChildIsSavedOrPlaying(bool favoriteChild, bool playingChild, bool removed)
     {
         using var f = new Fixture(series: true); f.Favorite = favoriteChild; f.Playing = playingChild;
         await f.Run(); f.Clock.Advance(6); await f.Run();
@@ -215,6 +215,7 @@ public sealed class UnsavedItemCleanupTests
 
         public Fixture(bool series = false)
         {
+            if (series) Data.PlaybackPositionTicks = 0; // Poster-only browsing has no episode playback history.
             Config = new() { PersistentLibraryPath = Root, CleanupUnsavedItems = true };
             Activity = new(Clock);
             Title = Path.Combine(Root, series ? "tv" : "movies", "Title");

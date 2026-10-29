@@ -596,7 +596,7 @@
                 <div class="checkboxContainer checkboxContainer-withDescription">
                   <label> <input is="emby-checkbox" type="checkbox" id="chkCleanupUnsavedItems" /> <span>Remove unsaved titles</span> </label>
                   <div class="fieldDescription">
-                    Automatically remove temporary Mediarow STRM/NFO files and library entries after browsing or playback. Use Jellyfin's Favorite heart to keep a movie, series, season or episode for later. A favorite from any user keeps the shared title. Off by default.
+                    Automatically remove temporary Mediarow STRM/NFO files and library entries after browsing or playback. Started, unfinished series are kept between episodes automatically, including ongoing shows waiting for more episodes. Simply opening a poster does not protect it. Use Jellyfin's Favorite heart to keep other titles for later. A favorite from any user keeps the shared title. Off by default.
                   </div>
                 </div>
                 <div class="inputContainer">
@@ -609,7 +609,7 @@
                     <summary>How cleanup works</summary>
                     <div class="mrDetailsBody">
                       <div class="fieldDescription">
-                        Default: 5 minutes. Wait this long after the last title interaction or playback activity. Active or paused playback and imports are protected. Cleanup checks once a minute, so removal can occur up to about a minute after the grace period. Restarting the server grants a fresh grace period. Works through server requests from Android TV and other Jellyfin clients; no custom client button is needed. Clients do not always report leaving a details page, so the timer uses the last reported title activity. Only indexed Mediarow-generated streams and companion NFO files are removed; artwork and subtitles remain.
+                        Default: 5 minutes. Wait this long after the last title interaction or playback activity. Active or paused playback and imports are protected. A started series stays protected until it is ended, its complete episode inventory is verified, and everyone who started it has finished all imported episodes. Unknown or incomplete metadata keeps it protected. Cleanup checks once a minute, so removal can occur up to about a minute after the grace period. Restarting the server grants a fresh grace period. Works through Jellyfin's saved playback history and standard requests from Android TV and other clients; no custom client button is needed. Clients do not always report leaving a details page, so the timer uses the last reported title activity. Only indexed Mediarow-generated streams and companion NFO files are removed; artwork and subtitles remain.
                       </div>
                     </div>
                   </details>
