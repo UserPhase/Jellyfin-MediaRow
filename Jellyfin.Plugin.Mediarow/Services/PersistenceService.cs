@@ -52,7 +52,8 @@ public class PersistenceService
     private IDisposable? TrackUse(string? path)
     {
         var config = Config;
-        var title = config.Enabled && config.CleanupUnsavedItems ? TemporaryItemActivity.GetTitlePath(config, path) : null;
+        var cleanupEnabled = config.CleanupUnsavedItems || config.CleanupWatchedMovies || config.CleanupCompletedSeries;
+        var title = config.Enabled && cleanupEnabled ? TemporaryItemActivity.GetTitlePath(config, path) : null;
         return title == null ? null : _temporaryActivity?.BeginUse(title);
     }
 
@@ -62,7 +63,7 @@ public class PersistenceService
     /// <returns>The path to the created folder, or null if already exists or failed.</returns>
     public async Task<string?> PersistMovieAsync(BaseItemDto movie, CancellationToken cancellationToken = default)
     {
-        using var activity = Config.CleanupUnsavedItems ? TrackUse(GetMovieFilePath(movie)) : null;
+        using var activity = TrackUse(GetMovieFilePath(movie));
         if (movie.Type != BaseItemKind.Movie)
         {
             _logger.LogDebug("[PersistenceService] Item is not a movie: {Name} ({Type})", movie.Name, movie.Type);
@@ -124,7 +125,7 @@ public class PersistenceService
     /// <returns>The path to the created folder, or null if already exists or failed.</returns>
     public async Task<string?> PersistSeriesAsync(BaseItemDto series, CancellationToken cancellationToken = default)
     {
-        using var activity = Config.CleanupUnsavedItems ? TrackUse(GetSeriesFolderPath(series)) : null;
+        using var activity = TrackUse(GetSeriesFolderPath(series));
         if (series.Type != BaseItemKind.Series)
         {
             _logger.LogDebug("[PersistenceService] Item is not a series: {Name} ({Type})", series.Name, series.Type);
@@ -968,7 +969,7 @@ public class PersistenceService
     /// <returns>The number of new episodes added.</returns>
     public async Task<int> UpdateSeriesAsync(BaseItemDto series, CancellationToken cancellationToken = default)
     {
-        using var activity = Config.CleanupUnsavedItems ? TrackUse(GetSeriesFolderPath(series)) : null;
+        using var activity = TrackUse(GetSeriesFolderPath(series));
         if (series.Type != BaseItemKind.Series)
         {
             return 0;

@@ -8,137 +8,148 @@ using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
+using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.Mediarow.ScheduledTasks;
 
+/// <summary>Deletes only owned, fully watched titles after current retention and activity checks.</summary>
 public class WatchedItemCleanupTask(
     ILibraryManager libraryManager, IUserManager userManager, IUserDataManager userDataManager,
-    ISessionManager sessionManager, ILogger<WatchedItemCleanupTask> logger) : IScheduledTask
+    ISessionManager sessionManager, ILogger<WatchedItemCleanupTask> logger,
+    TemporaryItemActivity? activity = null, EpisodeSyncService? episodeSync = null, DynamicItemCache? itemCache = null) : IScheduledTask
 {
-    protected virtual PluginConfiguration Config => MediarowPlugin.Instance?.Configuration ?? new PluginConfiguration();
+    private readonly TemporaryItemActivity _activity = activity ?? new();
+    private readonly SemaphoreSlim _runLock = new(1, 1);
+    protected virtual PluginConfiguration Config => MediarowPlugin.Instance?.Configuration ?? new();
 
     public string Key => "MediarowWatchedItemCleanup";
     public string Name => "Mediarow: Clean Up Watched Items";
-    public string Description => "Removes Mediarow STRM/NFO files for watched movies and fully watched ended series when enabled. Waits for all enabled users with access and skips favorites and active playback.";
+    public string Description => "Removes owned watched titles after all enabled viewers finish. Keeps every account's favorites and defers incomplete inventories, scans, imports and playback.";
     public string Category => "Mediarow";
+
+    private static bool Enabled(PluginConfiguration config, bool? series = null) => config.Enabled && !config.CleanupUnsavedItems &&
+        (series.HasValue ? series.Value ? config.CleanupCompletedSeries : config.CleanupWatchedMovies : config.CleanupWatchedMovies || config.CleanupCompletedSeries);
 
     public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
-        var config = Config;
-        if (!config.Enabled || config.CleanupUnsavedItems || (!config.CleanupWatchedMovies && !config.CleanupCompletedSeries))
+        if (!await _runLock.WaitAsync(0, cancellationToken).ConfigureAwait(false)) return;
+        try
         {
-            progress.Report(100);
-            return;
-        }
-        var categories = new List<string>();
-        if (config.CleanupWatchedMovies) categories.Add("movies");
-        if (config.CleanupCompletedSeries) categories.AddRange(["tv", "anime"]);
-        if (categories.Any(category => !Path.IsPathFullyQualified(config.GetPersistencePath(category))))
-        {
-            throw new InvalidOperationException("Watched cleanup requires an absolute persistent library folder.");
-        }
+            var config = Config;
+            if (!Enabled(config) || libraryManager.IsScanRunning || episodeSync?.IsSweeping == true) return;
+            var categories = new List<string>();
+            if (config.CleanupWatchedMovies) categories.Add("movies");
+            if (config.CleanupCompletedSeries) categories.AddRange(["tv", "anime"]);
+            if (categories.Any(category => !Path.IsPathFullyQualified(config.GetPersistencePath(category))))
+                throw new InvalidOperationException("Watched cleanup requires absolute persistent library folders.");
 
-        var users = userManager.GetUsers().Where(user => !user.HasPermission(PermissionKind.IsDisabled)).ToArray();
-        var items = libraryManager.GetItemsResult(new InternalItemsQuery
-        {
-            Recursive = true, IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Series]
-        }).Items;
+            var items = libraryManager.GetItemsResult(new InternalItemsQuery
+            {
+                Recursive = true, IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Series]
+            }).Items;
+            for (int index = 0; index < items.Count; index++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (libraryManager.IsScanRunning || episodeSync?.IsSweeping == true) break;
+                var item = items[index];
+                bool series = item is Series;
+                if (item is not (Movie or Series) || !Enabled(Config, series) || !Path.IsPathFullyQualified(item.Path) ||
+                    (!series && !string.Equals(Path.GetExtension(item.Path), ".strm", StringComparison.OrdinalIgnoreCase))) continue;
+                var titlePath = series ? item.Path : Path.GetDirectoryName(item.Path)!;
+                var root = TemporaryItemActivity.GetLibraryRoot(Config, titlePath, series);
+                if (root == null) continue;
 
-        for (int index = 0; index < items.Count; index++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var item = items[index];
-            bool isSeries = item is Series;
-            if ((isSeries && !config.CleanupCompletedSeries) || (!isSeries && !config.CleanupWatchedMovies) ||
-                item is not (Movie or Series) || string.IsNullOrEmpty(item.Path))
-            {
-                continue;
-            }
-            var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-            string titlePath = isSeries ? item.Path : Path.GetDirectoryName(item.Path)!;
-            var categoryPaths = (isSeries ? new[] { "tv", "anime" } : new[] { "movies" })
-                .Select(category => Path.TrimEndingDirectorySeparator(Path.GetFullPath(config.GetPersistencePath(category))));
-            string? root = categoryPaths.FirstOrDefault(path =>
-                string.Equals(Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(titlePath)), path, comparison));
-            if (!Path.IsPathFullyQualified(item.Path) ||
-                root == null ||
-                (item is Series candidate && candidate.Status != MediaBrowser.Model.Entities.SeriesStatus.Ended) ||
-                (!isSeries && !Path.GetExtension(item.Path).Equals(".strm", StringComparison.OrdinalIgnoreCase)))
-            {
-                continue;
-            }
-
-            try
-            {
-                var viewers = users.Where(item.IsVisibleStandalone).ToArray();
-                if (viewers.Length == 0)
+                try
                 {
-                    continue;
-                }
-                var episodes = isSeries
-                    ? libraryManager.GetItemsResult(new InternalItemsQuery
+                    var children = GetChildren(item);
+                    if (!Eligible(item, children)) continue;
+                    var streams = GetStreams(item, children);
+                    var files = WatchedItemCleanup.GetOwnedFilesInLibrary(root, titlePath, series, streams);
+                    if (files.Count == 0 || files.Any(file => File.GetLastWriteTimeUtc(file) > DateTime.UtcNow.AddMinutes(-10))) continue;
+
+                    // Use the same per-title gate as request/import leases and unsaved cleanup.
+                    // File age is checked separately; enabling this gate must not reset a cleanup timer.
+                    _activity.SetEnabled(true);
+                    _activity.TryCleanup(titlePath, files.Max(File.GetLastWriteTimeUtc), TimeSpan.Zero, () =>
                     {
-                        ParentId = item.Id, Recursive = true, IncludeItemTypes = [BaseItemKind.Episode]
-                    }).Items.OfType<Episode>().ToArray()
-                    : [];
-                var watchedItems = isSeries ? episodes.Cast<BaseItem>().ToArray() : [item];
-                var data = viewers.SelectMany(user => watchedItems.Select(watchedItem =>
-                    userDataManager.GetUserData(user, watchedItem))).ToArray();
-                bool favorite = viewers.Any(user => userDataManager.GetUserData(user, item)?.IsFavorite == true) ||
-                    data.Any(userData => userData?.IsFavorite == true);
-                var ids = watchedItems.Select(watchedItem => watchedItem.Id).Append(item.Id).ToHashSet();
-                bool inUse = sessionManager.Sessions.Any(session =>
-                    session.NowPlayingItem != null && ids.Contains(session.NowPlayingItem.Id));
-                var watched = data.Select(userData => userData?.Played == true).ToArray();
-                bool eligible = item is Series series
-                    ? WatchedItemCleanup.CanRemoveSeries(config.CleanupCompletedSeries, series.Status, watched, inUse, favorite,
-                        episodes.Any(episode => !episode.PremiereDate.HasValue || episode.PremiereDate > DateTime.UtcNow))
-                    : WatchedItemCleanup.CanRemoveMovie(config.CleanupWatchedMovies, watched, inUse, favorite);
-                if (!eligible)
-                {
-                    continue;
+                        cancellationToken.ThrowIfCancellationRequested();
+                        if (!Enabled(Config, series) || libraryManager.IsScanRunning || episodeSync?.IsSweeping == true ||
+                            TemporaryItemActivity.GetLibraryRoot(Config, titlePath, series) != root) return false;
+                        var currentChildren = GetChildren(item);
+                        if (!Eligible(item, currentChildren)) return false;
+                        var currentStreams = GetStreams(item, currentChildren);
+                        var currentFiles = WatchedItemCleanup.GetOwnedFilesInLibrary(root, titlePath, series, currentStreams);
+                        if (currentFiles.Count == 0 || currentFiles.Any(file => File.GetLastWriteTimeUtc(file) > DateTime.UtcNow.AddMinutes(-10))) return false;
+                        // Recheck after the potentially slow inventory/user-data and filesystem reads.
+                        if (!Eligible(item, currentChildren) || !Enabled(Config, series) || libraryManager.IsScanRunning || episodeSync?.IsSweeping == true ||
+                            TemporaryItemActivity.GetLibraryRoot(Config, titlePath, series) != root) return false;
+                        WatchedItemCleanup.DeleteOwnedFilesInLibrary(root, titlePath, series, currentStreams);
+                        libraryManager.DeleteItem(item, new DeleteOptions { DeleteFileLocation = false, DeleteFromExternalProvider = false }, notifyParentItem: true);
+                        logger.LogInformation("[Mediarow] Removed watched {Type} {ItemId}", series ? "series" : "movie", item.Id);
+                        return true;
+                    });
                 }
-
-                var streams = isSeries ? episodes.Select(episode => episode.Path).ToArray() : [item.Path];
-                var files = WatchedItemCleanup.GetOwnedFilesInLibrary(root, titlePath, isSeries, streams);
-                if (files.Count == 0)
-                {
-                    logger.LogDebug("[Mediarow] Cleanup skipped unowned or mixed title {ItemId}", item.Id);
-                    continue;
-                }
-                // Allow imports/metadata refreshes to settle, and never delete a recently changed title.
-                if (files.Any(file => File.GetLastWriteTimeUtc(file) > DateTime.UtcNow.AddMinutes(-10)))
-                {
-                    continue;
-                }
-
-                if (Config.CleanupUnsavedItems) continue;
-                WatchedItemCleanup.DeleteOwnedFilesInLibrary(root, titlePath, isSeries, streams);
-                libraryManager.DeleteItem(item, new DeleteOptions
-                {
-                    DeleteFileLocation = false, DeleteFromExternalProvider = false
-                }, notifyParentItem: true);
-                logger.LogInformation("[Mediarow] Removed watched {Type} {ItemId} and {Count} generated files",
-                    isSeries ? "series" : "movie", item.Id, files.Count);
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+                { logger.LogWarning(ex, "[Mediarow] Cleanup deferred for {ItemId}", item.Id); }
+                progress.Report((index + 1) * 100d / items.Count);
+                await Task.Yield();
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
-            {
-                logger.LogError(ex, "[Mediarow] Watched cleanup failed for {ItemId}", item.Id);
-                throw;
-            }
-            progress.Report((index + 1) * 100.0 / items.Count);
-            await Task.Yield();
         }
-        progress.Report(100);
+        finally { progress.Report(100); _runLock.Release(); }
+    }
+
+    private BaseItem[] GetChildren(BaseItem item) => item is Series
+        ? libraryManager.GetItemsResult(new InternalItemsQuery
+        {
+            ParentId = item.Id, Recursive = true, IncludeItemTypes = [BaseItemKind.Season, BaseItemKind.Episode]
+        }).Items.Where(child => child is Season or Episode).ToArray() : [];
+
+    private static string[] GetStreams(BaseItem item, BaseItem[] children) => item is Series
+        ? children.OfType<Episode>().Select(episode => episode.Path).ToArray() : [item.Path];
+
+    private bool Eligible(BaseItem item, BaseItem[] children)
+    {
+        var allUsers = userManager.GetUsers().ToArray();
+        var retained = children.Prepend(item).ToArray();
+        // Retention includes disabled accounts and accounts that no longer have access.
+        if (allUsers.Any(user => retained.Any(child => userDataManager.GetUserData(user, child)?.IsFavorite == true))) return false;
+        var ids = retained.Select(child => child.Id).ToHashSet();
+        if (sessionManager.Sessions.Any(session => session.NowPlayingItem is { } playing &&
+            (ids.Contains(playing.Id) || item is Series && playing.SeriesId == item.Id))) return false;
+        var viewers = allUsers.Where(user => !user.HasPermission(PermissionKind.IsDisabled) && item.IsVisibleStandalone(user)).ToArray();
+        if (viewers.Length == 0) return false;
+        var watched = item is Series ? children.OfType<Episode>().Cast<BaseItem>().ToArray() : [item];
+        if (watched.Length == 0 || viewers.Any(user => watched.Any(child => userDataManager.GetUserData(user, child)?.Played != true))) return false;
+        if (item is not Series series) return true;
+        if (series.Status != SeriesStatus.Ended || children.OfType<Episode>().Any(episode =>
+            !episode.PremiereDate.HasValue || episode.PremiereDate > DateTime.UtcNow)) return false;
+        var expected = GetExpectedEpisodes(series);
+        var regular = children.OfType<Episode>().Where(episode => episode.ParentIndexNumber != 0).ToArray();
+        return expected is { Count: > 0 } && regular.All(episode => episode.ParentIndexNumber is > 0 && episode.IndexNumber is > 0) &&
+            expected.SetEquals(regular.Select(episode => (episode.ParentIndexNumber!.Value, episode.IndexNumber!.Value)));
+    }
+
+    /// <summary>Without a successful full inventory, defer destructive completed-series cleanup.</summary>
+    protected virtual IReadOnlySet<(int Season, int Episode)>? GetExpectedEpisodes(Series series)
+    {
+        var inventory = episodeSync?.GetState();
+        if (inventory == null || !inventory.TryGetValue(series.Id, out var state) ||
+            !string.Equals(state.Status, "Ended", StringComparison.OrdinalIgnoreCase) || state.ConsecutiveFailures != 0 || state.LastError != null ||
+            state.LastCheckedUtc == null || state.LastCheckedUtc < DateTime.UtcNow.AddDays(-8) || state.LastCheckedUtc > DateTime.UtcNow ||
+            state.NextAirDateUtc != null || state.KnownEpisodeCount <= 0) return null;
+        var episodes = itemCache?.GetEpisodesForSeries(series.Id)?.Where(episode => episode.ParentIndexNumber != 0).ToArray();
+        if (episodes == null || episodes.Length != state.KnownEpisodeCount || episodes.Any(episode =>
+            episode.ParentIndexNumber is not > 0 || episode.IndexNumber is not > 0 ||
+            !episode.PremiereDate.HasValue || episode.PremiereDate > DateTime.UtcNow)) return null;
+        var keys = episodes.Select(episode => (episode.ParentIndexNumber!.Value, episode.IndexNumber!.Value)).ToHashSet();
+        return keys.Count == state.KnownEpisodeCount ? keys : null;
     }
 
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
     {
-        yield return new TaskTriggerInfo
-        {
-            Type = TaskTriggerInfoType.IntervalTrigger, IntervalTicks = TimeSpan.FromHours(1).Ticks
-        };
+        yield return new TaskTriggerInfo { Type = TaskTriggerInfoType.IntervalTrigger, IntervalTicks = TimeSpan.FromHours(1).Ticks };
     }
 }

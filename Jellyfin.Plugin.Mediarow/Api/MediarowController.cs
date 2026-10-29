@@ -1,7 +1,10 @@
 using System.Text;
+using System.Text.Json;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.Mediarow.Configuration;
 using Jellyfin.Plugin.Mediarow.Services;
+using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Dto;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -25,6 +28,9 @@ public class MediarowController : ControllerBase
     private readonly ILogger<MediarowController> _logger;
     private readonly PlaybackItemResolver _playbackResolver;
     private readonly UserPermissionGuard _guard;
+    private readonly SearchResultFactory? _searchResultFactory;
+    private readonly IUserManager? _userManager;
+    private readonly ILibraryManager? _libraryManager;
 
     public MediarowController(
         DynamicItemCache itemCache,
@@ -34,9 +40,12 @@ public class MediarowController : ControllerBase
         ILogger<MediarowController> logger,
         PlaybackItemResolver playbackResolver,
         IMemoryCache memoryCache,
-        UserPermissionGuard guard)
+        UserPermissionGuard guard,
+        SearchResultFactory? searchResultFactory = null, IUserManager? userManager = null, ILibraryManager? libraryManager = null)
     {
         _guard = guard;
+        _searchResultFactory = searchResultFactory;
+        _userManager = userManager; _libraryManager = libraryManager;
         _itemCache = itemCache;
         _subtitleService = subtitleService;
         _persistenceService = persistenceService;
@@ -202,6 +211,7 @@ public class MediarowController : ControllerBase
         [FromRoute] Guid itemId,
         CancellationToken cancellationToken)
     {
+        if (!TryAuthorizeItem(itemId, out var session, out var item, out var denial)) return denial;
         // Check if persistence is enabled
         if (!Config.EnablePersistence)
         {
@@ -210,19 +220,19 @@ public class MediarowController : ControllerBase
         }
 
         // Get the item from cache
-        var item = _itemCache.GetItem(itemId);
-        if (item == null)
-        {
-            _logger.LogDebug("[Mediarow] Item not found in cache for persistence: {ItemId}", itemId);
-            return NotFound(new { Error = "Item not found in cache" });
-        }
-
         _logger.LogInformation("[Mediarow] Persisting item: {Name} ({Type})", item.Name, item.Type);
 
         string? createdPath;
 
         try
         {
+            // Shared catalog DTOs must not be passed to a service that enriches them in place.
+            item = await EnrichForAuthorizationAsync(item, cancellationToken);
+            var current = _guard.Resolve(User, session.UserId);
+            if (!current.Succeeded || !_guard.CanView(current.Context!, item)) return NotFound();
+            var existing = _persistenceService.FindExistingLibraryItem(item);
+            if (existing != null && !CanViewNative(current.Context!, existing, item.Type))
+                return NotFound();
             // Handle based on item type
             if (item.Type == BaseItemKind.Movie)
             {
@@ -240,6 +250,10 @@ public class MediarowController : ControllerBase
 
             if (createdPath == null)
             {
+                current = _guard.Resolve(User, session.UserId);
+                if (!current.Succeeded || !_guard.CanView(current.Context!, item)) return NotFound();
+                existing = _persistenceService.FindExistingLibraryItem(item);
+                if (existing != null && !CanViewNative(current.Context!, existing, item.Type)) return NotFound();
                 _logger.LogDebug("[Mediarow] Item already exists in library or could not be created: {Name}", item.Name);
                 return Ok(new { Message = "Item already exists in library", AlreadyExists = true });
             }
@@ -247,13 +261,22 @@ public class MediarowController : ControllerBase
             // Add to the library if configured (series are imported directly with all episodes)
             await _persistenceService.AddToLibraryAsync(createdPath, item.Type, item);
 
+            current = _guard.Resolve(User, session.UserId);
+            if (!current.Succeeded || !_guard.CanView(current.Context!, item)) return NotFound();
+            var persisted = _persistenceService.FindExistingLibraryItem(item);
+            if (persisted != null && !CanViewNative(current.Context!, persisted, item.Type)) return NotFound();
+
             _logger.LogInformation("[Mediarow] Successfully persisted: {Name} to {Path}", item.Name, createdPath);
             return Ok(new { Message = "Item persisted successfully", Path = createdPath });
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Mediarow] Error persisting item: {Name}", item.Name);
-            return BadRequest(new { Error = $"Failed to persist item: {ex.Message}" });
+            _logger.LogError("[Mediarow] Error persisting item {ItemId} ({ErrorType})", itemId, ex.GetType().Name);
+            return StatusCode(502, new { Error = "The title could not be persisted. Check metadata connectivity and library-folder permissions." });
         }
     }
 
@@ -267,12 +290,7 @@ public class MediarowController : ControllerBase
         [FromRoute] Guid itemId,
         CancellationToken cancellationToken)
     {
-        var item = _itemCache.GetItem(itemId);
-        if (item == null)
-        {
-            _logger.LogDebug("[Mediarow] Playback resolve item not found in cache: {ItemId}", itemId);
-            return NotFound(new { Error = "Item not found in cache" });
-        }
+        if (!TryAuthorizeItem(itemId, out var session, out var item, out var denial)) return denial;
 
         if (item.Type != BaseItemKind.Movie && item.Type != BaseItemKind.Series)
         {
@@ -286,7 +304,17 @@ public class MediarowController : ControllerBase
 
         try
         {
-            var resolved = await _playbackResolver.ResolveAsync(item, cancellationToken).ConfigureAwait(false);
+            item = await EnrichForAuthorizationAsync(item, cancellationToken);
+            var before = _guard.Resolve(User, session.UserId);
+            if (!before.Succeeded || !_guard.CanView(before.Context!, item)) return NotFound();
+            var existing = _persistenceService.FindExistingLibraryItem(item);
+            if (existing != null && !CanViewNative(before.Context!, existing, item.Type)) return NotFound();
+            var resolved = await _playbackResolver.ResolveAsync(PrivateCopy(item), cancellationToken).ConfigureAwait(false);
+            // Policies can change during preparation, and an existing native match may belong to a hidden library.
+            var current = _guard.Resolve(User, session.UserId);
+            if (!current.Succeeded || !_guard.CanView(current.Context!, _itemCache.GetItem(itemId) ?? item) ||
+                (resolved != null && !CanViewNative(current.Context!, resolved, item.Type)))
+                return NotFound();
             return resolved == null
                 ? Accepted(new { Resolved = false, Message = "The title is waiting for Jellyfin's library scan. Try opening it again shortly." })
                 : Ok(new { ItemId = resolved.Id, Resolved = true });
@@ -301,5 +329,53 @@ public class MediarowController : ControllerBase
             _logger.LogWarning("[Mediarow] Playback item creation failed for {Id} ({ErrorType})", itemId, ex.GetType().Name);
             return StatusCode(502, new { Error = "The title could not be prepared. Check metadata-provider connectivity and persistent-folder permissions." });
         }
+    }
+
+    private async Task<BaseItemDto> EnrichForAuthorizationAsync(BaseItemDto item, CancellationToken cancellationToken)
+    {
+        var copy = PrivateCopy(item);
+        if (_searchResultFactory == null) return copy;
+        return copy.Type switch
+        {
+            BaseItemKind.Movie => await _searchResultFactory.EnrichMovieDtoAsync(copy, cancellationToken),
+            BaseItemKind.Series => await _searchResultFactory.EnrichSeriesDtoAsync(copy, cancellationToken),
+            _ => copy
+        };
+    }
+
+    private static BaseItemDto PrivateCopy(BaseItemDto item)
+    {
+        var copy = JsonSerializer.Deserialize<BaseItemDto>(JsonSerializer.Serialize(item))!;
+        copy.UserData = null;
+        return copy;
+    }
+
+    private bool CanViewNative(UserSessionContext session, BaseItem item, BaseItemKind type)
+    {
+        var user = _userManager?.GetUserById(session.UserId);
+        return _guard.CanView(session, new BaseItemDto { Id = item.Id, Type = type }) &&
+            (_userManager == null || user != null && item.IsVisibleStandalone(user));
+    }
+
+    private bool TryAuthorizeItem(Guid itemId, out UserSessionContext session, out BaseItemDto item, out IActionResult denial)
+    {
+        session = null!;
+        item = null!;
+        Guid requested = Guid.Empty;
+        if (Request.Query.TryGetValue("userId", out var supplied) && !Guid.TryParse(supplied.ToString(), out requested))
+        { denial = BadRequest(new { Error = "Invalid userId." }); return false; }
+        var access = _guard.Resolve(User, requested);
+        if (!access.Succeeded)
+        { denial = access.Failure == UserAccessFailure.Unauthenticated ? Unauthorized() : Forbid(); return false; }
+        session = access.Context!;
+        var cached = _itemCache.GetItem(itemId);
+        if (cached == null || !_guard.CanView(session, cached))
+        { denial = NotFound(); return false; }
+        var native = _libraryManager?.GetItemById(itemId);
+        if (native != null && !CanViewNative(session, native, cached.Type))
+        { denial = NotFound(); return false; }
+        item = cached;
+        denial = null!;
+        return true;
     }
 }

@@ -17,7 +17,8 @@ public sealed class TemporaryItemActivityFilter(
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
         var config = MediarowPlugin.Instance?.Configuration;
-        bool enabled = config?.Enabled == true && config.CleanupUnsavedItems;
+        bool enabled = config?.Enabled == true &&
+            (config.CleanupUnsavedItems || config.CleanupWatchedMovies || config.CleanupCompletedSeries);
         activity.SetEnabled(enabled);
         if (!enabled || context.ActionDescriptor is not ControllerActionDescriptor descriptor || !IsRelevant(descriptor))
         { await next(); return; }

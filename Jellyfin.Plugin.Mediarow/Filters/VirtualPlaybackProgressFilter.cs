@@ -1,6 +1,11 @@
 using Jellyfin.Plugin.Mediarow.Extensions;
 using Jellyfin.Plugin.Mediarow.Services;
+using MediaBrowser.Controller.Configuration;
+using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Session;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.Logging;
@@ -15,15 +20,23 @@ public sealed class VirtualPlaybackProgressFilter : IAsyncActionFilter, IOrdered
     private readonly DynamicItemCache _itemCache;
     private readonly VirtualResumeTracker _resumeTracker;
     private readonly ILogger<VirtualPlaybackProgressFilter> _logger;
+    private readonly UserPermissionGuard? _guard;
+    private readonly ILibraryManager? _library;
+    private readonly IUserManager? _users;
+    private readonly IUserDataManager? _userData;
+    private readonly IServerConfigurationManager? _configuration;
 
     public VirtualPlaybackProgressFilter(
         DynamicItemCache itemCache,
         VirtualResumeTracker resumeTracker,
-        ILogger<VirtualPlaybackProgressFilter> logger)
+        ILogger<VirtualPlaybackProgressFilter> logger,
+        UserPermissionGuard? guard = null, ILibraryManager? library = null, IUserManager? users = null,
+        IUserDataManager? userData = null, IServerConfigurationManager? configuration = null)
     {
         _itemCache = itemCache;
         _resumeTracker = resumeTracker;
         _logger = logger;
+        _guard = guard; _library = library; _users = users; _userData = userData; _configuration = configuration;
     }
 
     public int Order => 1;
@@ -33,17 +46,38 @@ public sealed class VirtualPlaybackProgressFilter : IAsyncActionFilter, IOrdered
         ControllerActionDescriptor? descriptor = context.ActionDescriptor as ControllerActionDescriptor;
         var isPlaybackReport = descriptor?.ControllerName == "Playstate" &&
             descriptor.ActionName is "ReportPlaybackProgress" or "ReportPlaybackStopped" or "OnPlaybackProgress" or "OnPlaybackStopped";
-        if (!isPlaybackReport)
+        var resetsResume = descriptor?.ControllerName == "Playstate" && descriptor.ActionName is
+            "MarkPlayedItem" or "MarkPlayedItemLegacy" or "MarkUnplayedItem" or "MarkUnplayedItemLegacy";
+        var updatesUserData = descriptor?.ControllerName == "Items" && descriptor.ActionName is "UpdateItemUserData" or "UpdateItemUserDataLegacy";
+        if (!isPlaybackReport && !resetsResume && !updatesUserData)
         {
             await next();
             return;
         }
 
-        await next();
+        var executed = await next();
+        if (executed.Exception != null || context.HttpContext.Response.StatusCode >= 400 ||
+            executed.Result is IStatusCodeActionResult { StatusCode: >= 400 }) return;
 
-        if (!context.HttpContext.TryGetUserId(out Guid userId))
+        if (context.HttpContext.User.Identity?.IsAuthenticated != true || !context.HttpContext.TryGetUserId(out Guid userId))
         {
             _logger.LogDebug("[Mediarow] Ignored virtual playback report because no user ID was available");
+            return;
+        }
+        Guid requested = context.ActionArguments.TryGetValue("userId", out var supplied) && supplied is Guid target ? target : Guid.Empty;
+        if (_guard != null)
+        {
+            var access = _guard.Resolve(context.HttpContext.User, requested);
+            if (!access.Succeeded) return;
+            userId = access.Context!.UserId;
+        }
+        else if (requested != Guid.Empty && requested != userId) return;
+
+        if (resetsResume || updatesUserData)
+        {
+            if (context.ActionArguments.TryGetValue("itemId", out var value) && value is Guid id &&
+                (resetsResume || executed.Result is ObjectResult { Value: UserItemDataDto { PlaybackPositionTicks: 0 } }))
+                _resumeTracker.RemoveResumeItem(userId, id);
             return;
         }
 
@@ -65,12 +99,34 @@ public sealed class VirtualPlaybackProgressFilter : IAsyncActionFilter, IOrdered
         }
 
         long ticks = positionTicks.GetValueOrDefault();
-        if (itemId == Guid.Empty || ticks <= 0)
+        if (itemId == Guid.Empty || !positionTicks.HasValue || ticks < 0)
         {
             return;
         }
 
-        var item = _itemCache.GetItem(itemId);
+        var cached = _itemCache.GetItem(itemId);
+        var tracked = _resumeTracker.GetTrackedItem(userId, itemId);
+        var item = cached != null && SearchResultFactory.IsDynamicItem(cached) ? cached : tracked;
+        // Native Jellyfin already owns other titles' history; do not duplicate every playback report.
+        if (item == null && _resumeTracker.GetResumeTicks(userId, itemId) <= 0) return;
+        if (_guard != null && item != null)
+        {
+            var access = _guard.Resolve(context.HttpContext.User, userId);
+            if (!access.Succeeded || !_guard.CanView(access.Context!, item)) return;
+        }
+        var native = _library?.GetItemById(itemId);
+        var user = _users?.GetUserById(userId);
+        var state = native == null || user == null ? null : _userData?.GetUserData(user, native);
+        long runtime = native?.RunTimeTicks ?? item?.RunTimeTicks ?? 0;
+        double completion = Math.Clamp(_configuration?.Configuration.MaxResumePct ?? 90, 1, 100);
+        bool failed = context.ActionArguments.Values.OfType<PlaybackStopInfo>().FirstOrDefault()?.Failed == true;
+        if (failed) return;
+        if (ticks == 0 || state is { Played: true, PlaybackPositionTicks: 0 } ||
+            runtime > 0 && (ticks >= runtime || (decimal)ticks / runtime * 100 > (decimal)completion))
+        {
+            _resumeTracker.RemoveResumeItem(userId, itemId);
+            return;
+        }
         if (item != null)
         {
             _resumeTracker.SaveResumeItem(userId, item, ticks);

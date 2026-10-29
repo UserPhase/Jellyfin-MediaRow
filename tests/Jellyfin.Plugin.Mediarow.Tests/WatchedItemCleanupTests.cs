@@ -118,6 +118,7 @@ public sealed class WatchedItemCleanupTests : IDisposable
         bool removed = false;
         var library = AioStreamsPlaybackTests.Proxy<ILibraryManager>.Create((method, args) =>
         {
+            if (method.Name == "get_IsScanRunning") return false;
             if (method.Name == "GetItemsResult") return new QueryResult<BaseItem>([movie]);
             if (method.Name == "DeleteItem")
             {
@@ -179,13 +180,14 @@ public sealed class WatchedItemCleanupTests : IDisposable
         };
         var episodes = new[]
         {
-            new Episode { Id = Guid.NewGuid(), Path = first, PremiereDate = DateTime.UtcNow.AddDays(-1) },
-            new Episode { Id = Guid.NewGuid(), Path = last, PremiereDate = DateTime.UtcNow.AddDays(-1) }
+            new Episode { Id = Guid.NewGuid(), Path = first, PremiereDate = DateTime.UtcNow.AddDays(-1), ParentIndexNumber = 1, IndexNumber = 1 },
+            new Episode { Id = Guid.NewGuid(), Path = last, PremiereDate = DateTime.UtcNow.AddDays(-1), ParentIndexNumber = 1, IndexNumber = 2 }
         };
         var user = new User("viewer", "test", "test");
         bool removed = false;
         var library = AioStreamsPlaybackTests.Proxy<ILibraryManager>.Create((method, args) =>
         {
+            if (method.Name == "get_IsScanRunning") return false;
             if (method.Name == "GetItemsResult")
             {
                 var query = Assert.IsType<InternalItemsQuery>(args![0]);
@@ -231,6 +233,9 @@ public sealed class WatchedItemCleanupTests : IDisposable
         : WatchedItemCleanupTask(library, users, data, sessions, NullLogger<WatchedItemCleanupTask>.Instance)
     {
         protected override PluginConfiguration Config => config;
+        // This positive cleanup fixture represents a verified full two-episode inventory.
+        protected override IReadOnlySet<(int Season, int Episode)>? GetExpectedEpisodes(Series series) =>
+            new HashSet<(int, int)> { (1, 1), (1, 2) };
     }
 
     private string Write(string category, string title, string file, string content)

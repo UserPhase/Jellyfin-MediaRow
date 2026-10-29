@@ -46,9 +46,31 @@ public sealed class AppLibraryService
         // Hidden rows are dropped and the user's row order becomes the library order.
         IReadOnlyList<IHomeSection> sections = _preferences.ArrangeSections(
             userId,
-            _manager.GetSections().OfType<VirtualCatalogHomeSection>(),
+            _manager.GetSections().Where(section => section is VirtualCatalogHomeSection or DiscoveryCatalogHomeSection),
             section => section.Id);
-        return AppLibraryLayout.Project(sections, HomeRowContentFilter.GetCategories(Config), preserveOrder: true);
+        var categories = HomeRowContentFilter.GetCategories(Config);
+        var builtIn = AppLibraryLayout.Project(sections.OfType<VirtualCatalogHomeSection>(), categories, preserveOrder: true)
+            .ToLookup(library => library.SectionId, StringComparer.OrdinalIgnoreCase);
+        var result = new List<AppLibraryDefinition>();
+        foreach (var section in sections)
+        {
+            if (section is DiscoveryCatalogHomeSection catalog)
+            {
+                // Explicit catalogs do not consume one of the six rotating genre slots.
+                foreach (var category in categories.Where(category => catalog.Selection.MediaType == Models.DiscoveryMediaType.All ||
+                    category == "Anime" || (catalog.Selection.MediaType == Models.DiscoveryMediaType.Movie) == (category == "Movies")))
+                {
+                    result.Add(new AppLibraryDefinition(AppLibraryLayout.CreateId(section.Id, category),
+                        section.DisplayTitle + " " + category, section.Id, category,
+                        category == "Movies" ? CollectionType.movies : CollectionType.tvshows, result.Count));
+                }
+            }
+            else
+            {
+                foreach (var library in builtIn[section.Id]) result.Add(library with { Order = result.Count });
+            }
+        }
+        return result;
     }
 
     public AppLibraryDefinition? Find(Guid userId, Guid libraryId)

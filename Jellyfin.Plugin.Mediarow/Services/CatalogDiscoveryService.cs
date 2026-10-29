@@ -22,6 +22,8 @@ public class CatalogDiscoveryService
     public const int MaxUpstreamPages = 25;
 
     public const int MaxPageSize = 100;
+    // A Stremio page contains at most 100 candidates; never reserve an arbitrary client offset.
+    public const int MaxWindowItems = MaxUpstreamPages * MaxPageSize;
 
     private const string TmdbBaseUrl = "https://api.themoviedb.org/3";
     private const string TmdbImageBaseUrl = "https://image.tmdb.org/t/p/";
@@ -156,15 +158,20 @@ public class CatalogDiscoveryService
         string? contentCategory,
         CancellationToken cancellationToken = default)
     {
-        if (requests.Count == 0 || pageSize <= 0 || pageIndex < 0)
+        if (requests.Count == 0 || requests.Count > MaxPageSize || pageSize is <= 0 or > MaxPageSize || pageIndex < 0)
         {
             return (Array.Empty<BaseItemDto>(), false);
         }
 
         var shares = SplitPageSize(pageSize, requests.Count);
+        // Beyond the bounded upstream window there is no accessible page. Check before multiplication.
+        if (shares.Any(share => share > 0 && pageIndex > (MaxWindowItems - share) / share))
+        {
+            return (Array.Empty<BaseItemDto>(), false);
+        }
         var windows = await Task.WhenAll(requests.Select((request, index) => shares[index] == 0
                 ? Task.FromResult<(IReadOnlyList<BaseItemDto> Items, bool HasMore)>((Array.Empty<BaseItemDto>(), false))
-                : ReadWindowAsync(request, pageIndex * shares[index], shares[index], contentCategory, cancellationToken)))
+                : ReadWindowAsync(request, checked(pageIndex * shares[index]), shares[index], contentCategory, cancellationToken)))
             .ConfigureAwait(false);
 
         var items = Interleave(windows.Select(window => window.Items).ToList())
@@ -204,9 +211,14 @@ public class CatalogDiscoveryService
         string? contentCategory,
         CancellationToken cancellationToken = default)
     {
+        if (offset < 0 || count is <= 0 or > MaxPageSize || offset > MaxWindowItems - count)
+        {
+            return (Array.Empty<BaseItemDto>(), false);
+        }
+        cancellationToken.ThrowIfCancellationRequested();
         var config = Config;
-        var needed = offset + count + 1;
-        var collected = new List<BaseItemDto>(needed);
+        var needed = checked(offset + count + 1);
+        var collected = new List<BaseItemDto>(Math.Min(needed, MaxPageSize + 1));
         var seen = new HashSet<Guid>();
         for (var upstreamPage = 0; upstreamPage < MaxUpstreamPages && collected.Count < needed; upstreamPage++)
         {
@@ -225,6 +237,7 @@ public class CatalogDiscoveryService
                     seen.Add(dto.Id))
                 {
                     collected.Add(dto);
+                    if (collected.Count == needed) break;
                 }
             }
 
@@ -235,7 +248,7 @@ public class CatalogDiscoveryService
         }
 
         var window = collected.Skip(offset).Take(count).ToList();
-        return (window, collected.Count > offset + count);
+        return (window, collected.Count > checked(offset + count));
     }
 
     /// <summary>

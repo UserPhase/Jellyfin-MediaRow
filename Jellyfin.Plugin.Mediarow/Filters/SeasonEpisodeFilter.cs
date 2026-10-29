@@ -71,7 +71,8 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
     }
 
     /// <summary>
-    /// Virtual seasons/episodes inherit the series' parental decision; blocked or unauthorized requests get an empty list.
+    /// Resolves ownership and current policy before handling a virtual parent. Rejected requests
+    /// retain an explicit authentication, authorization or visibility result.
     /// </summary>
     private bool CanViewSeries(ActionExecutingContext context, BaseItemDto seriesItem)
     {
@@ -79,7 +80,56 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
             ? id
             : Guid.Empty;
         UserAccessResult access = _guard.Resolve(context.HttpContext.User, requestedUserId);
-        return access.Succeeded && _guard.CanView(access.Context!, seriesItem);
+        if (!access.Succeeded)
+        {
+            context.Result = access.Failure == UserAccessFailure.Unauthenticated ? new UnauthorizedResult() : new ForbidResult();
+            return false;
+        }
+        if (!_guard.CanView(access.Context!, PolicyItem(seriesItem)))
+        { context.Result = new NotFoundResult(); return false; }
+        var native = _libraryManager.GetItemById(seriesItem.Id);
+        var user = _userManager.GetUserById(access.Context!.UserId);
+        if (native != null && (user == null || !native.IsVisibleStandalone(user)))
+        { context.Result = new NotFoundResult(); return false; }
+        return true;
+    }
+
+    private BaseItemDto[] VisibleChildren(ActionExecutingContext context, BaseItemDto parent, IEnumerable<BaseItemDto> children)
+    {
+        if (!CanViewSeries(context, parent)) return [];
+        Guid requested = context.ActionArguments.TryGetValue("userId", out var value) && value is Guid id ? id : Guid.Empty;
+        var access = _guard.Resolve(context.HttpContext.User, requested);
+        if (!access.Succeeded) return [];
+        var user = _userManager.GetUserById(access.Context!.UserId);
+        return _guard.FilterVisible(access.Context!, children.Select(PolicyItem))
+            .Where(child => _libraryManager.GetItemById(child.Id) is not { } native || user != null && native.IsVisibleStandalone(user))
+            .Select(VirtualItemProjection.WithoutUserData).ToArray();
+    }
+
+    private BaseItemDto PolicyItem(BaseItemDto item)
+    {
+        var copy = VirtualItemProjection.WithoutUserData(item);
+        if (copy.Type is BaseItemKind.Season or BaseItemKind.Episode && copy.SeriesId.HasValue &&
+            _itemCache.GetItem(copy.SeriesId.Value) is { } series)
+        {
+            // Like native children, an unrated virtual child inherits its parent's certification.
+            // An explicit child rating remains authoritative and is checked separately.
+            if (string.IsNullOrWhiteSpace(copy.CustomRating) && string.IsNullOrWhiteSpace(copy.OfficialRating))
+                copy.OfficialRating = series.CustomRating ?? series.OfficialRating;
+            copy.Tags = (copy.Tags ?? []).Concat(series.Tags ?? []).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        }
+        return copy;
+    }
+
+    private void SetChildrenResult(ActionExecutingContext context, BaseItemDto parent, IEnumerable<BaseItemDto> children)
+    {
+        var visible = VisibleChildren(context, parent, children);
+        if (context.Result != null) return;
+        int offset = context.ActionArguments.TryGetValue("startIndex", out var start) && start is int index ? Math.Max(0, index) : 0;
+        int? limit = context.ActionArguments.TryGetValue("limit", out var size) && size is int count ? Math.Max(0, count) : null;
+        var page = visible.Skip(offset);
+        context.Result = new OkObjectResult(new QueryResult<BaseItemDto>(offset, visible.Length,
+            (limit.HasValue ? page.Take(limit.Value) : page).ToArray()));
     }
 
     private static OkObjectResult EmptyResult() => new(new QueryResult<BaseItemDto>
@@ -129,7 +179,7 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
         }
 
         // Handle Items controller - Android TV uses this endpoint with parentId
-        if (controllerName == "Items" && actionName == "GetItems")
+        if (controllerName == "Items" && actionName is "GetItems" or "GetItemsByUserIdLegacy")
         {
             await HandleGetItems(context, next);
             return;
@@ -157,7 +207,7 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
 
         if (!CanViewSeries(context, seriesItem))
         {
-            context.Result = EmptyResult();
+            context.Result ??= EmptyResult();
             return;
         }
 
@@ -178,11 +228,7 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
         _logger.LogDebug("[Mediarow] Returning {Count} cached seasons for dynamic series {Id}",
             seasons.Count, seriesId);
 
-        context.Result = new OkObjectResult(new QueryResult<BaseItemDto>
-        {
-            Items = seasons.ToArray(),
-            TotalRecordCount = seasons.Count
-        });
+        SetChildrenResult(context, seriesItem, seasons);
     }
 
     private async Task HandleGetEpisodes(ActionExecutingContext context, ActionExecutionDelegate next)
@@ -204,7 +250,7 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
 
         if (!CanViewSeries(context, seriesItem))
         {
-            context.Result = EmptyResult();
+            context.Result ??= EmptyResult();
             return;
         }
 
@@ -216,6 +262,8 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
         {
             // Look up the season to get its number
             var seasonDto = _itemCache.GetItem(seasonId);
+            if (seasonDto == null || seasonDto.SeriesId != seriesId || !CanViewSeries(context, seasonDto))
+            { context.Result ??= new NotFoundResult(); return; }
             if (seasonDto?.IndexNumber != null)
             {
                 seasonNumber = seasonDto.IndexNumber;
@@ -251,6 +299,9 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
             return;
         }
 
+        episodes = VisibleChildren(context, seriesItem, episodes).ToList();
+        int total = episodes.Count;
+        if (context.Result != null) return;
         // Handle startItemId - Android TV uses this to indicate which episode to start from
         // The client expects the list to start from this item
         if (context.ActionArguments.TryGetValue("startItemId", out var startItemIdObj) && startItemIdObj is Guid startItemId)
@@ -268,8 +319,10 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
             }
         }
 
+        int pageOffset = context.ActionArguments.TryGetValue("startIndex", out var offsetObj) && offsetObj is int offset ? Math.Max(0, offset) : 0;
+        episodes = episodes.Skip(pageOffset).ToList();
         // Handle limit parameter
-        if (context.ActionArguments.TryGetValue("limit", out var limitObj) && limitObj is int limit && limit > 0)
+        if (context.ActionArguments.TryGetValue("limit", out var limitObj) && limitObj is int limit && limit >= 0)
         {
             episodes = episodes.Take(limit).ToList();
         }
@@ -283,7 +336,8 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
         context.Result = new OkObjectResult(new QueryResult<BaseItemDto>
         {
             Items = episodes.ToArray(),
-            TotalRecordCount = episodes.Count
+            StartIndex = pageOffset,
+            TotalRecordCount = total
         });
     }
 
@@ -307,7 +361,7 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
         // Jellyfin only advances Next Up after an episode is finished; show the episode the user is part-way through instead.
         var dtoOptions = new DtoOptions(true);
         result.Items = result.Items
-            .Select(item => item.SeriesId is { } id && resumeEpisodes.TryGetValue(id, out var episode) && episode.Id != item.Id
+            .Select(item => item.SeriesId is { } id && resumeEpisodes.TryGetValue(id, out var episode) && episode.Id != item.Id && episode.IsVisible(user, false) && episode.IsVisibleStandalone(user)
                 ? _dtoService.GetBaseItemDto(episode, dtoOptions, user)
                 : item)
             .ToArray();
@@ -324,6 +378,7 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
 
         var seriesItem = _itemCache.GetItem(seriesId);
         var isDynamic = seriesItem != null && SearchResultFactory.IsDynamicItem(seriesItem);
+        if (isDynamic && !CanViewSeries(context, seriesItem!)) return;
         var librarySeries = isDynamic
             ? _persistenceService.FindExistingLibraryItem(seriesItem!)
             : _libraryManager.GetItemById(seriesId);
@@ -332,8 +387,10 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
         {
             if (TryGetUser(context, out var user))
             {
+                if (!librarySeries.IsVisible(user, false) || !librarySeries.IsVisibleStandalone(user))
+                { context.Result = new NotFoundResult(); return; }
                 var resumeEpisode = _seriesResumeResolver.FindResumeEpisode(user, librarySeries);
-                if (resumeEpisode != null)
+                if (resumeEpisode != null && resumeEpisode.IsVisible(user, false) && resumeEpisode.IsVisibleStandalone(user))
                 {
                     _logger.LogDebug("[Mediarow] HandleGetNextUp: Returning in-progress episode {Name} for series {Id}", resumeEpisode.Name, librarySeries.Id);
                     context.Result = new OkObjectResult(new QueryResult<BaseItemDto>
@@ -369,7 +426,9 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
         var episodes = _itemCache.GetEpisodesForSeason(seriesId, 1);
         if (episodes != null && episodes.Count > 0)
         {
-            var firstEpisode = episodes.OrderBy(e => e.IndexNumber ?? 0).First();
+            var firstEpisode = VisibleChildren(context, seriesItem!, episodes).OrderBy(e => e.IndexNumber ?? 0).FirstOrDefault();
+            if (context.Result != null) return;
+            if (firstEpisode == null) { context.Result = EmptyResult(); return; }
             _logger.LogDebug("[Mediarow] HandleGetNextUp: Returning first episode {Name} for dynamic series", firstEpisode.Name);
 
             context.Result = new OkObjectResult(new QueryResult<BaseItemDto>
@@ -410,6 +469,13 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
             await next();
             return;
         }
+        if (!CanViewSeries(context, parentItem)) return;
+        if (parentItem.Type == BaseItemKind.Season)
+        {
+            var series = parentItem.SeriesId.HasValue ? _itemCache.GetItem(parentItem.SeriesId.Value) : null;
+            if (series == null || !CanViewSeries(context, series))
+            { context.Result ??= new NotFoundResult(); return; }
+        }
 
         // If parent is a series, return seasons
         if (parentItem.Type == BaseItemKind.Series)
@@ -420,11 +486,7 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
                 _logger.LogDebug("[Mediarow] Items/GetItems: Returning {Count} seasons for dynamic series {Id}",
                     seasons.Count, parentId);
 
-                context.Result = new OkObjectResult(new QueryResult<BaseItemDto>
-                {
-                    Items = seasons.ToArray(),
-                    TotalRecordCount = seasons.Count
-                });
+                SetChildrenResult(context, parentItem, seasons);
                 return;
             }
         }
@@ -444,11 +506,7 @@ public class SeasonEpisodeFilter : IAsyncActionFilter, IOrderedFilter
                     _logger.LogDebug("[Mediarow] Items/GetItems: Returning {Count} episodes for dynamic season {SeasonNum} of series {SeriesId}",
                         episodes.Count, seasonNumber.Value, seriesId);
 
-                    context.Result = new OkObjectResult(new QueryResult<BaseItemDto>
-                    {
-                        Items = episodes.ToArray(),
-                        TotalRecordCount = episodes.Count
-                    });
+                    SetChildrenResult(context, parentItem, episodes);
                     return;
                 }
             }

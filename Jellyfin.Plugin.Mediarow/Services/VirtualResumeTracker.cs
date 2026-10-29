@@ -6,227 +6,186 @@ using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.Mediarow.Services;
 
-/// <summary>
-/// Persists resume positions for virtual/dynamic items so they can surface in Jellyfin's
-/// continue-watching/home sections even when the item is not stored as a real database item.
-/// </summary>
+/// <summary>Owns per-user resume positions and snapshots in a single atomically replaced document.</summary>
 public sealed class VirtualResumeTracker
 {
     private readonly ILogger<VirtualResumeTracker> _logger;
-    private readonly IApplicationPaths _applicationPaths;
+    private readonly string _directory;
     private readonly object _lock = new();
+    private readonly Dictionary<string, Dictionary<string, Entry>> _state;
+    private string StoragePath => Path.Combine(_directory, "virtual-resume-state.json");
 
-    public VirtualResumeTracker(
-        IApplicationPaths applicationPaths,
-        ILogger<VirtualResumeTracker> logger)
+    private sealed class Entry
     {
-        _applicationPaths = applicationPaths;
+        public BaseItemDto? Item { get; set; }
+        public long PositionTicks { get; set; }
+        public DateTime LastPlayedDate { get; set; }
+    }
+
+    public VirtualResumeTracker(IApplicationPaths applicationPaths, ILogger<VirtualResumeTracker> logger)
+    {
         _logger = logger;
-    }
-
-    private string StorageDirectory => Path.Combine(
-        _applicationPaths.PluginConfigurationsPath,
-        "Jellyfin.Plugin.Mediarow");
-
-    private string StoragePath => Path.Combine(StorageDirectory, "virtual-resume.json");
-
-    private string SnapshotStoragePath => Path.Combine(StorageDirectory, "virtual-resume-items.json");
-
-    private Dictionary<string, Dictionary<string, long>> LoadState()
-    {
-        try
-        {
-            var path = StoragePath;
-            Directory.CreateDirectory(StorageDirectory);
-
-            if (!File.Exists(path))
-            {
-                return new Dictionary<string, Dictionary<string, long>>(StringComparer.OrdinalIgnoreCase);
-            }
-
-            var json = File.ReadAllText(path);
-            if (string.IsNullOrWhiteSpace(json))
-            {
-                return new Dictionary<string, Dictionary<string, long>>(StringComparer.OrdinalIgnoreCase);
-            }
-
-            var state = JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, long>>>(json);
-            return state ?? new Dictionary<string, Dictionary<string, long>>(StringComparer.OrdinalIgnoreCase);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to load virtual resume state from {Path}", StoragePath);
-            return new Dictionary<string, Dictionary<string, long>>(StringComparer.OrdinalIgnoreCase);
-        }
-    }
-
-    private void SaveState(Dictionary<string, Dictionary<string, long>> state)
-    {
-        try
-        {
-            var path = StoragePath;
-            Directory.CreateDirectory(StorageDirectory);
-
-            var json = JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(path, json);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to save virtual resume state to {Path}", StoragePath);
-        }
+        _directory = Path.Combine(applicationPaths.PluginConfigurationsPath, "Jellyfin.Plugin.Mediarow");
+        _state = Load();
     }
 
     public void SaveResumeTicks(Guid userId, Guid itemId, long playbackPositionTicks)
     {
-        if (playbackPositionTicks <= 0)
-        {
-            return;
-        }
-
+        if (userId == Guid.Empty || itemId == Guid.Empty) return;
         lock (_lock)
         {
-            var state = LoadState();
-            var userKey = userId.ToString("N");
-            var itemKey = itemId.ToString("N");
-
-            if (!state.TryGetValue(userKey, out var itemMap))
-            {
-                itemMap = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
-                state[userKey] = itemMap;
-            }
-
-            itemMap[itemKey] = playbackPositionTicks;
-            SaveState(state);
+            if (playbackPositionTicks <= 0) { RemoveCore(userId, itemId); return; }
+            var items = GetOrCreate(userId);
+            var key = itemId.ToString("N");
+            items.TryGetValue(key, out var existing);
+            var entry = new Entry { Item = existing?.Item, PositionTicks = playbackPositionTicks, LastPlayedDate = DateTime.UtcNow };
+            if (entry.Item != null) entry.Item = ForUser(entry.Item, UserData(itemId, entry));
+            items[key] = entry;
+            Save();
         }
     }
 
     public void SaveResumeItem(Guid userId, BaseItemDto item, long playbackPositionTicks)
     {
-        SaveResumeTicks(userId, item.Id, playbackPositionTicks);
-
+        if (userId == Guid.Empty || item.Id == Guid.Empty) return;
         lock (_lock)
         {
-            var snapshots = LoadSnapshots();
-            var userKey = userId.ToString("N");
-            if (!snapshots.TryGetValue(userKey, out var itemMap))
-            {
-                itemMap = new Dictionary<string, VirtualResumeItem>(StringComparer.OrdinalIgnoreCase);
-                snapshots[userKey] = itemMap;
-            }
-
-            // Snapshot a private copy: the caller's item may be a shared cache entry.
-            var snapshot = VirtualItemProjection.ForUser(item, GetUserData(userId, item.Id));
-            itemMap[item.Id.ToString("N")] = new VirtualResumeItem
-            {
-                Item = snapshot,
-                PlaybackPositionTicks = playbackPositionTicks,
-                LastPlayedDate = DateTime.UtcNow
-            };
-            SaveSnapshots(snapshots);
+            if (playbackPositionTicks <= 0) { RemoveCore(userId, item.Id); return; }
+            var entry = new Entry { PositionTicks = playbackPositionTicks, LastPlayedDate = DateTime.UtcNow };
+            entry.Item = ForUser(item, UserData(item.Id, entry));
+            GetOrCreate(userId)[item.Id.ToString("N")] = entry;
+            Save();
         }
+    }
+
+    public void RemoveResumeItem(Guid userId, Guid itemId)
+    {
+        lock (_lock) RemoveCore(userId, itemId);
+    }
+
+    private void RemoveCore(Guid userId, Guid itemId)
+    {
+        if (!_state.TryGetValue(userId.ToString("N"), out var items) || !items.Remove(itemId.ToString("N"))) return;
+        if (items.Count == 0) _state.Remove(userId.ToString("N"));
+        Save(); // Position and snapshot disappear in the same durable replacement.
     }
 
     public long GetResumeTicks(Guid userId, Guid itemId)
     {
+        lock (_lock) return Find(userId, itemId)?.PositionTicks ?? 0;
+    }
+
+    public BaseItemDto? GetTrackedItem(Guid userId, Guid itemId)
+    {
         lock (_lock)
         {
-            var state = LoadState();
-            var userKey = userId.ToString("N");
-            var itemKey = itemId.ToString("N");
-
-            if (!state.TryGetValue(userKey, out var itemMap) || !itemMap.TryGetValue(itemKey, out var ticks))
-            {
-                return 0;
-            }
-
-            return ticks;
+            var entry = Find(userId, itemId);
+            return entry?.Item == null ? null : ForUser(entry.Item, UserData(itemId, entry));
         }
     }
 
     public IReadOnlyDictionary<Guid, long> GetResumeTicksForUser(Guid userId)
     {
-        lock (_lock)
-        {
-            var state = LoadState();
-            if (!state.TryGetValue(userId.ToString("N"), out var itemMap))
-            {
-                return new Dictionary<Guid, long>();
-            }
-
-            var result = new Dictionary<Guid, long>();
-            foreach (var (key, ticks) in itemMap)
-            {
-                if (ticks > 0 && Guid.TryParse(key, out var itemId))
-                {
-                    result[itemId] = ticks;
-                }
-            }
-
-            return result;
-        }
+        lock (_lock) return _state.TryGetValue(userId.ToString("N"), out var items)
+            ? items.Where(pair => pair.Value.PositionTicks > 0 && Guid.TryParse(pair.Key, out _))
+                .ToDictionary(pair => Guid.Parse(pair.Key), pair => pair.Value.PositionTicks)
+            : new Dictionary<Guid, long>();
     }
 
     public UserItemDataDto? GetUserData(Guid userId, Guid itemId)
     {
-        var ticks = GetResumeTicks(userId, itemId);
-        if (ticks <= 0)
+        lock (_lock)
         {
-            return null;
+            var entry = Find(userId, itemId);
+            return entry?.PositionTicks > 0 ? UserData(itemId, entry) : null;
         }
-
-        return new UserItemDataDto
-        {
-            Key = itemId.ToString("N"),
-            PlaybackPositionTicks = ticks,
-            PlayCount = 0,
-            IsFavorite = false,
-            Played = false,
-            LastPlayedDate = DateTime.UtcNow
-        };
     }
-
 
     public IReadOnlyList<VirtualResumeItem> GetTrackedItemSnapshots(Guid userId)
     {
-        lock (_lock)
-        {
-            var snapshots = LoadSnapshots();
-            return snapshots.TryGetValue(userId.ToString("N"), out var itemMap)
-                ? itemMap.Values.Where(item => item.PlaybackPositionTicks > 0).OrderByDescending(item => item.LastPlayedDate).ToArray()
-                : Array.Empty<VirtualResumeItem>();
-        }
+        lock (_lock) return _state.TryGetValue(userId.ToString("N"), out var items)
+            ? items.Values.Where(entry => entry.Item != null && entry.PositionTicks > 0)
+                .OrderByDescending(entry => entry.LastPlayedDate).Select(entry => new VirtualResumeItem
+                {
+                    Item = ForUser(entry.Item!, UserData(entry.Item!.Id, entry)),
+                    PlaybackPositionTicks = entry.PositionTicks, LastPlayedDate = entry.LastPlayedDate
+                }).ToArray()
+            : Array.Empty<VirtualResumeItem>();
     }
 
-    private Dictionary<string, Dictionary<string, VirtualResumeItem>> LoadSnapshots()
+    private Entry? Find(Guid userId, Guid itemId) =>
+        _state.TryGetValue(userId.ToString("N"), out var items) && items.TryGetValue(itemId.ToString("N"), out var entry) ? entry : null;
+
+    private Dictionary<string, Entry> GetOrCreate(Guid userId)
+    {
+        var key = userId.ToString("N");
+        if (!_state.TryGetValue(key, out var items)) _state[key] = items = new(StringComparer.OrdinalIgnoreCase);
+        return items;
+    }
+
+    private static UserItemDataDto UserData(Guid itemId, Entry entry) => new()
+    {
+        Key = itemId.ToString("N"), PlaybackPositionTicks = entry.PositionTicks,
+        Played = false, PlayCount = 0, IsFavorite = false, LastPlayedDate = entry.LastPlayedDate
+    };
+
+    private static BaseItemDto ForUser(BaseItemDto item, UserItemDataDto userData)
+    {
+        // Snapshots outlive the catalog cache. Detach nested sources/provider dictionaries as well
+        // as UserData so callers cannot mutate either another response or the persisted snapshot.
+        var copy = JsonSerializer.Deserialize<BaseItemDto>(JsonSerializer.Serialize(item))!;
+        copy.UserData = VirtualItemProjection.CloneUserData(userData);
+        return copy;
+    }
+
+    private Dictionary<string, Dictionary<string, Entry>> Load()
     {
         try
         {
-            Directory.CreateDirectory(StorageDirectory);
-            if (!File.Exists(SnapshotStoragePath))
+            if (File.Exists(StoragePath))
+                return JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, Entry>>>(File.ReadAllText(StoragePath)) ?? new();
+            // Import the previous two-file format once. An empty canonical document prevents resurrection.
+            var positionsPath = Path.Combine(_directory, "virtual-resume.json");
+            var snapshotsPath = Path.Combine(_directory, "virtual-resume-items.json");
+            var positions = File.Exists(positionsPath)
+                ? JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, long>>>(File.ReadAllText(positionsPath)) : null;
+            var snapshots = File.Exists(snapshotsPath)
+                ? JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, VirtualResumeItem>>>(File.ReadAllText(snapshotsPath)) : null;
+            var result = new Dictionary<string, Dictionary<string, Entry>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var user in positions ?? [])
             {
-                return new Dictionary<string, Dictionary<string, VirtualResumeItem>>(StringComparer.OrdinalIgnoreCase);
+                var entries = new Dictionary<string, Entry>(StringComparer.OrdinalIgnoreCase);
+                foreach (var item in user.Value.Where(item => item.Value > 0))
+                {
+                    VirtualResumeItem? snapshot = null;
+                    if (snapshots?.TryGetValue(user.Key, out var saved) == true) saved.TryGetValue(item.Key, out snapshot);
+                    entries[item.Key] = new Entry { Item = snapshot?.Item, PositionTicks = item.Value, LastPlayedDate = snapshot?.LastPlayedDate ?? DateTime.MinValue };
+                }
+                result[user.Key] = entries;
             }
-
-            return JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, VirtualResumeItem>>>(File.ReadAllText(SnapshotStoragePath))
-                ?? new Dictionary<string, Dictionary<string, VirtualResumeItem>>(StringComparer.OrdinalIgnoreCase);
+            return result;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            _logger.LogWarning(ex, "Failed to load virtual resume item snapshots from {Path}", SnapshotStoragePath);
-            return new Dictionary<string, Dictionary<string, VirtualResumeItem>>(StringComparer.OrdinalIgnoreCase);
+            _logger.LogWarning("[Mediarow] Could not load virtual resume state ({ErrorType})", ex.GetType().Name);
+            return new(StringComparer.OrdinalIgnoreCase);
         }
     }
 
-    private void SaveSnapshots(Dictionary<string, Dictionary<string, VirtualResumeItem>> snapshots)
+    private void Save()
     {
+        var temporary = StoragePath + ".tmp";
         try
         {
-            Directory.CreateDirectory(StorageDirectory);
-            File.WriteAllText(SnapshotStoragePath, JsonSerializer.Serialize(snapshots, new JsonSerializerOptions { WriteIndented = true }));
+            Directory.CreateDirectory(_directory);
+            using (var file = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                JsonSerializer.Serialize(file, _state);
+                file.Flush(flushToDisk: true);
+            }
+            File.Move(temporary, StoragePath, overwrite: true);
         }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to save virtual resume item snapshots to {Path}", SnapshotStoragePath);
-        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { _logger.LogWarning("[Mediarow] Could not save virtual resume state ({ErrorType})", ex.GetType().Name); }
     }
 }
