@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.Mediarow.HomeScreen;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Model.Dto;
@@ -61,6 +62,70 @@ public sealed class VirtualResumeTracker
     public void RemoveResumeItem(Guid userId, Guid itemId)
     {
         lock (_lock) RemoveCore(userId, itemId);
+    }
+
+    /// <summary>Finds this account's copies of a title, including its former virtual identity.</summary>
+    public IReadOnlyList<Guid> GetMatchingItemIds(Guid userId, BaseItemDto identity)
+    {
+        lock (_lock)
+        {
+            if (!_state.TryGetValue(userId.ToString("N"), out var items)) return Array.Empty<Guid>();
+            return items.Where(pair => Guid.TryParse(pair.Key, out var id) &&
+                    (id == identity.Id || pair.Value.Item is { } saved && SameTitle(saved, identity)))
+                .Select(pair => Guid.Parse(pair.Key)).ToArray();
+        }
+    }
+
+    public void RemoveResumeItems(Guid userId, IEnumerable<Guid> itemIds)
+    {
+        lock (_lock)
+        {
+            if (!_state.TryGetValue(userId.ToString("N"), out var items)) return;
+            bool changed = false;
+            foreach (Guid id in itemIds) changed |= items.Remove(id.ToString("N"));
+            if (!changed) return;
+            if (items.Count == 0) _state.Remove(userId.ToString("N"));
+            Save();
+        }
+    }
+
+    public void UpdateResumeItems(Guid userId, IEnumerable<Guid> itemIds, long playbackPositionTicks)
+    {
+        if (playbackPositionTicks <= 0) { RemoveResumeItems(userId, itemIds); return; }
+        lock (_lock)
+        {
+            bool changed = false;
+            foreach (Guid id in itemIds)
+            {
+                var entry = Find(userId, id);
+                if (entry == null) continue;
+                entry.PositionTicks = playbackPositionTicks;
+                entry.LastPlayedDate = DateTime.UtcNow;
+                if (entry.Item != null) entry.Item = ForUser(entry.Item, UserData(id, entry));
+                changed = true;
+            }
+            if (changed) Save();
+        }
+    }
+
+    private static bool SameTitle(BaseItemDto left, BaseItemDto right)
+    {
+        if (left.Type != right.Type) return false;
+        bool ProviderMatches(params string[] names) => names.Any(name =>
+            left.ProviderIds?.FirstOrDefault(pair => pair.Key.Equals(name, StringComparison.OrdinalIgnoreCase)).Value is string a &&
+            right.ProviderIds?.FirstOrDefault(pair => pair.Key.Equals(name, StringComparison.OrdinalIgnoreCase)).Value is string b &&
+            !string.IsNullOrWhiteSpace(a) && string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        if (left.Type is BaseItemKind.Movie or BaseItemKind.Series)
+            return ProviderMatches("Imdb", "Tmdb", "Tvdb", "AniList");
+        if (left.Type != BaseItemKind.Episode) return false;
+        // Episode-specific IDs are safe across imports. An IMDb series ID alone must never
+        // cause completion of one episode to clear a sibling episode's progress.
+        if (ProviderMatches("Tvdb", "Tmdb", "Stremio")) return true;
+        return left.ParentIndexNumber is >= 0 && left.IndexNumber is > 0 &&
+            left.ParentIndexNumber == right.ParentIndexNumber && left.IndexNumber == right.IndexNumber &&
+            (left.SeriesId is { } series && series != Guid.Empty && left.SeriesId == right.SeriesId ||
+                ProviderMatches("SeriesImdb", "SeriesTmdb", "SeriesTvdb", "SeriesAniList"));
     }
 
     private void RemoveCore(Guid userId, Guid itemId)

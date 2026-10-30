@@ -1,4 +1,8 @@
-# Mediarow 2.4.0
+# Mediarow 2.4.1
+
+This patch closes the remaining five audit findings. Persisted-anime and AIOStreams source aliases check the resolved native item's access before loading streams. The shared visibility guard now enforces library-folder and ancestor access. Language selection validates caller/target ownership and saves remembered choices only after successful, still-authorized negotiation.
+
+Native playback completion and resets now clear matching virtual resume entries by media identity, scoped to the account and exact episode. Progress updates keep those entries current after import. Continue Watching reads live resume state instead of the five-minute discovery cache, so cleared titles disappear on the next request. The GitHub workflow includes the new positive and negative regressions through the normal test project; no external verification folder is needed for CI.
 
 Started, unfinished series now remain protected from unsaved-title cleanup between episodes. Partial playback, completed earlier episodes and ongoing shows waiting for new episodes all count. Any account's unfinished viewing retains the shared title, using Jellyfin's saved history across restarts. Opening a poster alone still permits grace-period cleanup. Verified fully finished, ended series can expire again; favorites retain them.
 
@@ -14,7 +18,7 @@ Hide watched and Not interested now apply only to recommendations and their See 
 
 ## Verification
 
-- .NET 10 suite: 334 tests passed, including 24 between-episode retention checks, recommendation scope, incomplete inventories and batched episode lookups.
+- .NET 10 suite: 362 tests passed, including 28 final audit regressions, 24 between-episode retention checks, recommendation scope, incomplete inventories and batched episode lookups.
 - Node browser-behavior suites: 46 tests passed.
 - Real-browser settings check: 58 scalar controls edited, saved, and reopened; desktop/phone layout, older DOM without `replaceChildren`, section navigation, collapsed-field validation, and failed-load protection passed.
 - Additional configuration tests cover catalog rows and order, language priorities for multiple users, remembered series overrides, and personal Home controls.
@@ -25,7 +29,7 @@ The automated browser check uses fixture accounts and configuration, rather than
 
 Open Jellyfin Media Player, connect to the local test server, and sign in as an administrator. Open **User menu → Dashboard → Plugins → Jellyfin Mediarow**. Save settings before running diagnostics or checking for new episodes, as those actions use saved server values.
 
-The local install package is generated under `out/mediarow-2.4.0.zip`. Its root contains only `Jellyfin.Plugin.Mediarow.dll` and `meta.json`. This plugin targets Jellyfin 12 and .NET 10.
+The local install package is generated under `out/mediarow-2.4.1.zip`. Its root contains only `Jellyfin.Plugin.Mediarow.dll` and `meta.json`. This plugin targets Jellyfin 12 and .NET 10.
 
 ## Publishing
 

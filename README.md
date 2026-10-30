@@ -98,6 +98,8 @@ To check the behavior on Web, Media Player or Android TV: enable Hide watched fo
 
 ### Settings in Jellyfin Media Player
 
+Version 2.4.1 secures native stream aliases and library-folder visibility, validates ownership before applying language preferences, and clears imported titles' matching virtual resume state when they finish. Continue Watching uses current state on each request. Started-series cleanup protection remains enabled automatically when unsaved-title cleanup is on.
+
 Sign in to the server with a Jellyfin administrator account, then open **User menu → Dashboard → Plugins → Jellyfin Mediarow**. Jellyfin Media Player loads the same server-provided configuration page as Jellyfin Web; no separate desktop plugin is required ([client documentation](https://github.com/jellyfin/jellyfin-media-player/blob/v1.11.1/README.md)).
 
 The page has five sections: **Connections**, **Home rows**, **Library & cleanup**, **Language & subtitles**, and **Advanced & diagnostics**. All active server settings are editable here, including catalog rows, exact library paths, stream recovery, new-episode checks, per-user audio/subtitle priorities, remembered series choices, playback correction, and skip buttons. Expand the relevant provider or advanced section to edit it. Saving retains other users' preferences and settings belonging to inactive providers.

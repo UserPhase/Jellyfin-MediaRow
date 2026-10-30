@@ -184,7 +184,7 @@ public sealed class UserPermissionGuard
         if (libraryItem != null)
         {
             User? user = _userManager.GetUserById(context.UserId);
-            return user != null && libraryItem.IsVisible(user, false);
+            return user != null && libraryItem.IsVisible(user, false) && libraryItem.IsVisibleStandalone(user);
         }
 
         BaseItemDto ratingSource = item;

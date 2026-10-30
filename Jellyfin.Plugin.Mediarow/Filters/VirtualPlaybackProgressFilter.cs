@@ -1,6 +1,10 @@
 using Jellyfin.Plugin.Mediarow.Extensions;
 using Jellyfin.Plugin.Mediarow.Services;
+using Jellyfin.Data.Enums;
 using MediaBrowser.Controller.Configuration;
+using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.Movies;
+using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Session;
@@ -57,7 +61,8 @@ public sealed class VirtualPlaybackProgressFilter : IAsyncActionFilter, IOrdered
 
         var executed = await next();
         if (executed.Exception != null || context.HttpContext.Response.StatusCode >= 400 ||
-            executed.Result is IStatusCodeActionResult { StatusCode: >= 400 }) return;
+            executed.Result is IStatusCodeActionResult { StatusCode: >= 400 } ||
+            executed.Result is ForbidResult or ChallengeResult) return;
 
         if (context.HttpContext.User.Identity?.IsAuthenticated != true || !context.HttpContext.TryGetUserId(out Guid userId))
         {
@@ -77,7 +82,7 @@ public sealed class VirtualPlaybackProgressFilter : IAsyncActionFilter, IOrdered
         {
             if (context.ActionArguments.TryGetValue("itemId", out var value) && value is Guid id &&
                 (resetsResume || executed.Result is ObjectResult { Value: UserItemDataDto { PlaybackPositionTicks: 0 } }))
-                _resumeTracker.RemoveResumeItem(userId, id);
+                ClearEquivalentItems(userId, id);
             return;
         }
 
@@ -107,14 +112,17 @@ public sealed class VirtualPlaybackProgressFilter : IAsyncActionFilter, IOrdered
         var cached = _itemCache.GetItem(itemId);
         var tracked = _resumeTracker.GetTrackedItem(userId, itemId);
         var item = cached != null && SearchResultFactory.IsDynamicItem(cached) ? cached : tracked;
+        var native = _library?.GetItemById(itemId);
+        var identity = native == null ? item : NativeIdentity(native);
+        var matchingIds = identity == null ? Array.Empty<Guid>() : _resumeTracker.GetMatchingItemIds(userId, identity).ToArray();
+        item ??= matchingIds.Select(id => _resumeTracker.GetTrackedItem(userId, id)).FirstOrDefault(snapshot => snapshot != null);
         // Native Jellyfin already owns other titles' history; do not duplicate every playback report.
-        if (item == null && _resumeTracker.GetResumeTicks(userId, itemId) <= 0) return;
-        if (_guard != null && item != null)
+        if (item == null && matchingIds.Length == 0 && _resumeTracker.GetResumeTicks(userId, itemId) <= 0) return;
+        if (_guard != null && identity != null)
         {
             var access = _guard.Resolve(context.HttpContext.User, userId);
-            if (!access.Succeeded || !_guard.CanView(access.Context!, item)) return;
+            if (!access.Succeeded || !_guard.CanView(access.Context!, identity)) return;
         }
-        var native = _library?.GetItemById(itemId);
         var user = _users?.GetUserById(userId);
         var state = native == null || user == null ? null : _userData?.GetUserData(user, native);
         long runtime = native?.RunTimeTicks ?? item?.RunTimeTicks ?? 0;
@@ -124,10 +132,15 @@ public sealed class VirtualPlaybackProgressFilter : IAsyncActionFilter, IOrdered
         if (ticks == 0 || state is { Played: true, PlaybackPositionTicks: 0 } ||
             runtime > 0 && (ticks >= runtime || (decimal)ticks / runtime * 100 > (decimal)completion))
         {
-            _resumeTracker.RemoveResumeItem(userId, itemId);
+            _resumeTracker.RemoveResumeItems(userId, matchingIds.Append(itemId));
             return;
         }
-        if (item != null)
+        if (matchingIds.Length > 0)
+        {
+            // Retain the existing snapshot identity but keep its position current after import.
+            _resumeTracker.UpdateResumeItems(userId, matchingIds, ticks);
+        }
+        else if (item != null)
         {
             _resumeTracker.SaveResumeItem(userId, item, ticks);
         }
@@ -137,5 +150,42 @@ public sealed class VirtualPlaybackProgressFilter : IAsyncActionFilter, IOrdered
         }
         _logger.LogInformation("[Mediarow] Saved virtual resume position for item {ItemId}, user {UserId}, ticks {Ticks}, Cached {Cached}",
             itemId, userId, ticks, _itemCache.HasItem(itemId));
+    }
+
+    private void ClearEquivalentItems(Guid userId, Guid itemId)
+    {
+        var native = _library?.GetItemById(itemId);
+        var identity = native == null ? _itemCache.GetItem(itemId) ?? _resumeTracker.GetTrackedItem(userId, itemId) : NativeIdentity(native);
+        var related = identity == null ? Array.Empty<Guid>() : _resumeTracker.GetMatchingItemIds(userId, identity).ToArray();
+        _resumeTracker.RemoveResumeItems(userId, related.Append(itemId));
+    }
+
+    private BaseItemDto NativeIdentity(BaseItem item)
+    {
+        var identity = new BaseItemDto
+        {
+            Id = item.Id,
+            Type = item switch
+            {
+                Episode => BaseItemKind.Episode, Movie => BaseItemKind.Movie,
+                Series => BaseItemKind.Series, Season => BaseItemKind.Season,
+                _ => item.GetBaseItemKind()
+            },
+            ProviderIds = new Dictionary<string, string>(item.ProviderIds, StringComparer.OrdinalIgnoreCase),
+            RunTimeTicks = item.RunTimeTicks
+        };
+        if (item is Episode episode)
+        {
+            identity.SeriesId = episode.SeriesId;
+            identity.ParentIndexNumber = episode.ParentIndexNumber;
+            identity.IndexNumber = episode.IndexNumber;
+            if (episode.SeriesId != Guid.Empty && _library?.GetItemById(episode.SeriesId) is Series series)
+            {
+                foreach (string provider in new[] { "Imdb", "Tmdb", "Tvdb", "AniList" })
+                    if (series.ProviderIds.TryGetValue(provider, out string? value) && !string.IsNullOrWhiteSpace(value))
+                        identity.ProviderIds["Series" + provider] = value;
+            }
+        }
+        return identity;
     }
 }

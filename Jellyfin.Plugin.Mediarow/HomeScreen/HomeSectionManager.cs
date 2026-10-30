@@ -92,7 +92,10 @@ public sealed class HomeSectionManager
         {
             cacheKey = $"{_configurationVersion}:{BuildCacheKey(section, request)}";
         }
-        if (_cache.TryGetValue<QueryResult<BaseItemDto>>(cacheKey, out QueryResult<BaseItemDto>? cached) && cached != null)
+        // Resume state changes on every playback/reset report. Cache discovery metadata only;
+        // an old resume response must not resurrect a completed or removed title.
+        bool cacheResult = section is not VirtualContinueWatchingSection;
+        if (cacheResult && _cache.TryGetValue<QueryResult<BaseItemDto>>(cacheKey, out QueryResult<BaseItemDto>? cached) && cached != null)
         {
             return cached;
         }
@@ -107,7 +110,7 @@ public sealed class HomeSectionManager
                 .Take(Math.Clamp(section.Limit, 1, 100))
                 .ToArray();
             QueryResult<BaseItemDto> limitedResult = new(limitedItems);
-            _cache.Set(cacheKey, limitedResult, TimeSpan.FromMinutes(5));
+            if (cacheResult) _cache.Set(cacheKey, limitedResult, TimeSpan.FromMinutes(5));
             return limitedResult;
         }
         catch (Exception ex)

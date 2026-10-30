@@ -1,14 +1,16 @@
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.Mediarow.Configuration;
-using Jellyfin.Plugin.Mediarow.Extensions;
 using Jellyfin.Plugin.Mediarow.Providers;
 using Jellyfin.Plugin.Mediarow.Services;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.MediaInfo;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
@@ -33,7 +35,8 @@ public sealed class LanguagePreferenceFilter(
     IMediaSourceManager mediaSourceManager,
     DynamicAioStreamsMediaSourceProvider provider,
     IMemoryCache cache,
-    ILogger<LanguagePreferenceFilter> logger) : IAsyncActionFilter
+    ILogger<LanguagePreferenceFilter> logger,
+    UserPermissionGuard guard) : IAsyncActionFilter
 {
     /// <summary>HttpContext item holding the AIOStreams candidates for the current playback request.</summary>
     public const string CandidatesKey = "Mediarow.AioStreamsCandidates";
@@ -44,12 +47,13 @@ public sealed class LanguagePreferenceFilter(
 
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
+        PendingDecision? pending = null;
         if (context.ActionDescriptor is ControllerActionDescriptor { ControllerName: "MediaInfo", ActionName: "GetPostedPlaybackInfo" } &&
             context.ActionArguments.TryGetValue("itemId", out var argument) && argument is Guid itemId)
         {
             try
             {
-                await ApplyAsync(context, itemId).ConfigureAwait(false);
+                pending = await ApplyAsync(context, itemId).ConfigureAwait(false);
             }
             catch (Exception ex) when (!context.HttpContext.RequestAborted.IsCancellationRequested)
             {
@@ -58,29 +62,64 @@ public sealed class LanguagePreferenceFilter(
             }
         }
 
-        await next().ConfigureAwait(false);
+        var executed = await next().ConfigureAwait(false);
+        if (pending == null || executed.Exception != null || context.HttpContext.Response.StatusCode >= 400 ||
+            executed.Result is IStatusCodeActionResult { StatusCode: >= 400 } ||
+            executed.Result is ForbidResult or ChallengeResult or
+                ObjectResult { Value: PlaybackInfoResponse { ErrorCode: not null } })
+            return;
+
+        // Negotiation may fail or policy may change while the native action runs. Only a successful,
+        // still-authorized request can write another account's cache/configuration (for an admin).
+        try
+        {
+            var access = guard.Resolve(context.HttpContext.User, pending.User.Id);
+            if (!access.Succeeded || !guard.CanView(access.Context!, new BaseItemDto { Id = pending.Item.Id })) return;
+            cache.Set(TrackDecision.CacheKey(pending.User.Id, pending.Item.Id), pending.Decision, TimeSpan.FromMinutes(15));
+            var currentConfig = Config ?? MediarowPlugin.Instance?.Configuration ?? pending.Config;
+            if ((pending.Decision.AudioManual || pending.Decision.SubtitleManual) &&
+                SeriesLanguageMemory.Remember(currentConfig, pending.User.Id, pending.Item, pending.Streams,
+                    pending.RequestedAudio, pending.RequestedSubtitle, pending.Decision.AudioManual, pending.Decision.SubtitleManual))
+            {
+                SaveConfiguration?.Invoke();
+                logger.LogInformation("[Mediarow] Remembered {User}'s track choice for {Series}", pending.User.Username,
+                    (pending.Item as MediaBrowser.Controller.Entities.TV.Episode)?.SeriesName);
+            }
+        }
+        catch (Exception ex) when (!context.HttpContext.RequestAborted.IsCancellationRequested)
+        {
+            logger.LogWarning("[Mediarow] Could not remember track choices for item {ItemId} ({ErrorType})", pending.Item.Id, ex.GetType().Name);
+        }
     }
 
-    private async Task ApplyAsync(ActionExecutingContext context, Guid itemId)
+    private sealed record PendingDecision(PluginConfiguration Config, User User, BaseItem Item,
+        TrackDecision Decision, IReadOnlyList<MediaStream> Streams, int? RequestedAudio, int? RequestedSubtitle);
+
+    private async Task<PendingDecision?> ApplyAsync(ActionExecutingContext context, Guid itemId)
     {
         var config = Config ?? MediarowPlugin.Instance?.Configuration;
         var item = libraryManager.GetItemById(itemId);
-        if (config == null || item is not Video || !TryGetUser(context, out var user))
+        Guid requestedUser = context.ActionArguments.TryGetValue("userId", out var value) && value is Guid id ? id : Guid.Empty;
+        var access = guard.Resolve(context.HttpContext.User, requestedUser);
+        if (config == null || item is not Video || !access.Succeeded ||
+            !guard.CanView(access.Context!, new BaseItemDto { Id = itemId }))
         {
-            return;
+            return null;
         }
+        var user = userManager.GetUserById(access.Context!.UserId);
+        if (user == null) return null;
 
         context.ActionArguments.TryGetValue("playbackInfoDto", out var body);
         if (!string.IsNullOrWhiteSpace(Argument<string>(context, body, "liveStreamId", "LiveStreamId")))
         {
-            return;
+            return null;
         }
 
         var candidates = context.HttpContext.Items[CandidatesKey] as IReadOnlyList<MediaSourceInfo>;
         var preference = TrackLanguageSelector.Resolve(config, user.Id, item, useGlobalFallback: candidates != null);
         if (preference == null)
         {
-            return;
+            return null;
         }
 
         var sourceId = Argument<string>(context, body, "mediaSourceId", "MediaSourceId");
@@ -90,7 +129,7 @@ public sealed class LanguagePreferenceFilter(
             var candidate = candidates.FirstOrDefault(source => string.Equals(source.Id, sourceId, StringComparison.OrdinalIgnoreCase));
             if (candidate == null)
             {
-                return;
+                return null;
             }
 
             var streams = await provider.GetProbedStreamsAsync(candidate, context.HttpContext.RequestAborted).ConfigureAwait(false);
@@ -106,7 +145,7 @@ public sealed class LanguagePreferenceFilter(
                 : sources.FirstOrDefault(source => string.Equals(source.Id, sourceId, StringComparison.OrdinalIgnoreCase));
             if (match == null)
             {
-                return;
+                return null;
             }
 
             defaults = match;
@@ -123,19 +162,13 @@ public sealed class LanguagePreferenceFilter(
         var audio = audioManual ? requestedAudio : selection.AudioStreamIndex ?? requestedAudio;
         var subtitle = subtitleManual ? requestedSubtitle : selection.SubtitleStreamIndex ?? requestedSubtitle;
 
-        cache.Set(TrackDecision.CacheKey(user.Id, item.Id),
+        var pending = new PendingDecision(config, user, item,
             new TrackDecision(audio ?? defaults.DefaultAudioStreamIndex, subtitle, audioManual, subtitleManual, defaults.MediaStreams),
-            TimeSpan.FromMinutes(15));
-        if ((audioManual || subtitleManual) && SeriesLanguageMemory.Remember(config, user.Id, item, defaults.MediaStreams,
-                requestedAudio, requestedSubtitle, audioManual, subtitleManual))
-        {
-            SaveConfiguration?.Invoke();
-            logger.LogInformation("[Mediarow] Remembered {User}'s track choice for {Series}", user.Username, (item as MediaBrowser.Controller.Entities.TV.Episode)?.SeriesName);
-        }
+            defaults.MediaStreams.ToArray(), requestedAudio, requestedSubtitle);
 
         if (audio == requestedAudio && subtitle == requestedSubtitle)
         {
-            return;
+            return pending;
         }
 
         context.ActionArguments["audioStreamIndex"] = audio;
@@ -147,6 +180,7 @@ public sealed class LanguagePreferenceFilter(
 
         logger.LogInformation("[Mediarow] Language preferences for {Item}: audio track {Audio}, subtitle track {Subtitle}",
             item.Name, audio?.ToString() ?? "default", subtitle?.ToString() ?? "default");
+        return pending;
     }
 
     // Query arguments take precedence over the request body, matching Jellyfin's MediaInfoController.
@@ -160,18 +194,4 @@ public sealed class LanguagePreferenceFilter(
         return body?.GetType().GetProperty(property)?.GetValue(body) is T fromBody ? fromBody : default;
     }
 
-    private bool TryGetUser(ActionExecutingContext context, out User user)
-    {
-        user = null!;
-        var userId = context.ActionArguments.TryGetValue("userId", out var value) && value is Guid id && id != Guid.Empty
-            ? id
-            : Guid.Empty;
-        if (userId == Guid.Empty && !context.TryGetUserId(out userId))
-        {
-            return false;
-        }
-
-        user = userManager.GetUserById(userId)!;
-        return user != null;
-    }
 }

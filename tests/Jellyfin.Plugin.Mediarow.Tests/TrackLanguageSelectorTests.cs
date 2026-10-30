@@ -1,3 +1,6 @@
+using System.Security.Claims;
+using Jellyfin.Data;
+using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.Mediarow.Configuration;
 using Jellyfin.Plugin.Mediarow.Filters;
@@ -226,8 +229,9 @@ public class TrackLanguageSelectorTests
     [Fact]
     public async Task FilterInjectsPreferredTracksUnlessClientPickedManually()
     {
-        var user = new User("viewer", "test", "test");
-        var movie = new Movie { Id = Guid.NewGuid(), Name = "Smallville", OriginalLanguage = "en" };
+        var user = new User("viewer", "test", "test") { Id = Guid.NewGuid() };
+        user.SetPermission(PermissionKind.EnableAllFolders, true);
+        var movie = new VisibleLanguageMovie { Id = Guid.NewGuid(), Name = "Smallville", OriginalLanguage = "en" };
         var source = new MediaSourceInfo
         {
             Id = movie.Id.ToString("N"),
@@ -240,11 +244,13 @@ public class TrackLanguageSelectorTests
             UserLanguagePreferences = [new UserLanguagePreference { UserId = user.Id.ToString("N"), SubtitleLanguages = ["en"] }]
         };
         var cache = new MemoryCache(new MemoryCacheOptions());
+        var library = Proxy<ILibraryManager>.Create((method, _) => method.Name == "GetItemById" ? movie : null);
+        var users = Proxy<IUserManager>.Create((method, _) => method.Name == "GetUserById" ? user : null);
+        var guard = new UserPermissionGuard(users, library, null!, new DynamicItemCache(cache, NullLogger<DynamicItemCache>.Instance), cache);
         var filter = new LanguagePreferenceFilter(
-            Proxy<ILibraryManager>.Create((method, _) => method.Name == "GetItemById" ? movie : null),
-            Proxy<IUserManager>.Create((method, _) => method.Name == "GetUserById" ? user : null),
+            library, users,
             Proxy<IMediaSourceManager>.Create((method, _) => method.Name == "GetStaticMediaSources" ? new List<MediaSourceInfo> { source } : null),
-            null!, cache, NullLogger<LanguagePreferenceFilter>.Instance) { Config = config };
+            null!, cache, NullLogger<LanguagePreferenceFilter>.Instance, guard) { Config = config };
 
         async Task<IDictionary<string, object?>> Run(int? clientAudio)
         {
@@ -254,7 +260,8 @@ public class TrackLanguageSelectorTests
                 arguments["audioStreamIndex"] = clientAudio;
             }
 
-            var action = new ActionContext(new DefaultHttpContext(), new RouteData(),
+            var action = new ActionContext(new DefaultHttpContext
+                { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(UserPermissionGuard.UserIdClaim, user.Id.ToString())], "test")) }, new RouteData(),
                 new ControllerActionDescriptor { ControllerName = "MediaInfo", ActionName = "GetPostedPlaybackInfo" });
             var context = new ActionExecutingContext(action, [], arguments, new object());
             await filter.OnActionExecutionAsync(context, () => Task.FromResult(new ActionExecutedContext(action, [], new object())));
@@ -270,6 +277,12 @@ public class TrackLanguageSelectorTests
         var manual = await Run(4);
         Assert.Equal(4, manual["audioStreamIndex"]);
         Assert.True(cache.Get<TrackDecision>(TrackDecision.CacheKey(user.Id, movie.Id))!.AudioManual);
+    }
+
+    private sealed class VisibleLanguageMovie : Movie
+    {
+        public override bool IsVisible(User user, bool skipAllowedTagsCheck = false) => true;
+        public override bool IsVisibleStandalone(User user) => true;
     }
 
     [Fact]

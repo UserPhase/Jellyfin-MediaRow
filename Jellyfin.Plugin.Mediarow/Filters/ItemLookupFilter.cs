@@ -204,6 +204,11 @@ public class ItemLookupFilter : IAsyncActionFilter, IOrderedFilter
                 try
                 {
                     directLibraryItem = _libraryManager.GetItemById(aioMapping.ItemId);
+                    if (directLibraryItem != null && !_guard.CanView(session, new BaseItemDto { Id = directLibraryItem.Id }))
+                    {
+                        context.Result = new NotFoundResult();
+                        return;
+                    }
                     if (directLibraryItem == null || !_nativeAioProvider.IsMediarowItem(directLibraryItem) ||
                         await _nativeAioProvider.FindSourceAsync(directLibraryItem, mediaSourceIdStr, context.HttpContext.RequestAborted) == null)
                     {
@@ -246,6 +251,14 @@ public class ItemLookupFilter : IAsyncActionFilter, IOrderedFilter
                 if (cachedItem == null)
                 {
                     var libraryEpisode = _libraryManager.GetItemById(episodeId.Value) as Episode;
+                    // Source aliases are item lookups too. Authorize the resolved owner before
+                    // inspecting its STRM, enriching metadata or generating private stream URLs.
+                    if (libraryEpisode != null && !_guard.CanView(session, new BaseItemDto
+                        { Id = libraryEpisode.Id, Type = BaseItemKind.Episode }))
+                    {
+                        context.Result = new NotFoundResult();
+                        return;
+                    }
                     if (libraryEpisode != null && IsPersistedAnimeEpisode(libraryEpisode))
                     {
                         _logger.LogWarning("[Mediarow] ItemLookup: Found persisted anime episode for MediaSource ID");
